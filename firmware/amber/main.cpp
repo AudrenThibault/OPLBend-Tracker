@@ -1873,6 +1873,11 @@ int main(void) {
   // Creer un morceau neuf efface celui qui est en memoire, et rien n'est
   // encore enregistre sur la carte : on demande confirmation.
   bool demandeNouveau = false;
+  // Le LOOPER impose son tempo au morceau (comme SLOOP) ; SAVE demande alors lequel garder : celui de la boucle
+  // (bpmNouveau) ou celui d'avant (bpmAvantLooper).
+  static double bpmAvantLooper = 0.0;
+  static bool bpmParLooper = false;
+  bool demandeBpm = false, bpmNouveau = true;
   // FM-1 : DELETE (PROJECT) : le navigateur choisit un projet a effacer
   // (navSuppr), puis la question, NO / YES a la croix, A pour valider, B pour
   // annuler (supprOui : YES pointe ; NO au depart).
@@ -2210,6 +2215,7 @@ int main(void) {
     loopSilence();
     selPos = 0; defautPris = false;                // (les sons par defaut : ceux du morceau charge)
     editN = 0;                                     // (EDIT : plus rien a remettre, ce sont d'autres sons)
+    bpmParLooper = false;                          // (un autre morceau, son tempo a lui)
     free(sonDefaut); free(sonCourant); sonDefaut = sonCourant = nullptr;
     bendPitch = bendFin = bendHorloge = 0; horlogeMaj();   // (et CIRCUIT BENDING 2)
 #endif
@@ -3013,8 +3019,8 @@ int main(void) {
       assombrirDemande = true;
       pageVue = -1;
     }
-    if (saveRetour && !dialogueNom) { saveRetour = false; page = saveAvant; pageVue = -1; }
-    fm1_clavier_suspendu(dialogueNom || navigateur || dialogueMidi);
+    if (saveRetour && !dialogueNom && !demandeBpm) { saveRetour = false; page = saveAvant; pageVue = -1; }
+    fm1_clavier_suspendu(dialogueNom || navigateur || dialogueMidi || demandeBpm);
 
     // ── SEQ, troisieme mode : la DRUM MACHINE ──────────────────────────────
     // On y arrive (sa page), on en repart (la page d'avant). Elle continue de
@@ -4048,6 +4054,13 @@ int main(void) {
                   e.t = f >= pas ? L - 1u : f * u - 1u;
                   idxOn[rg] = -1;
                 } else e.t = 0;
+              }
+              {                                          // le tempo du morceau : celui de la boucle (SLOOP aussi)
+                const double avant = md_replayer_get_bpm();
+                if ((uint32_t)(avant + 0.5) != bpm) {
+                  if (!bpmParLooper) { bpmAvantLooper = avant; bpmParLooper = true; }
+                  md_replayer_set_bpm((double)bpm);
+                }
               }
               g_loopUnite = u; g_loopPasG = (int)pas;
               for (int rr = 0; rr < 6; rr++) g_loopPasL[rr] = (uint8_t)pas;
@@ -5323,10 +5336,25 @@ int main(void) {
               // renseignent sur la page MIDI TARGETS, et nulle part ailleurs.
               // Les demander ici, canal par canal, transformait chaque
               // sauvegarde en questionnaire.
-              enregistreEtDis(sauveNom);
+              // (le LOOPER a change le tempo : lequel garder ? la question, puis l'enregistrement)
+              if (bpmParLooper && (int)(md_replayer_get_bpm() + 0.5) != (int)(bpmAvantLooper + 0.5)) {
+                demandeBpm = true; bpmNouveau = true; page = PAGE_PROJECT; pageVue = -1;
+              } else enregistreEtDis(sauveNom);
             } else if (n < 8) { sauveNom[n] = c; sauveNom[n + 1] = 0; }
           }
           if (frappe & KEY_B) { dialogueNom = false; pageVue = -1; }
+        }
+        // Le tempo change par le LOOPER : gauche / droite choisissent celui de la boucle ou celui d'avant, A
+        // enregistre avec, B renonce (rien n'est ecrit).
+        else if (demandeBpm) {
+          if (appui & (KEY_LEFT | KEY_RIGHT)) { bpmNouveau = !bpmNouveau; pageVue = -1; }
+          if (frappe & KEY_B) { demandeBpm = false; pageVue = -1; }
+          else if (frappe & KEY_A) {
+            demandeBpm = false; pageVue = -1;
+            if (!bpmNouveau) md_replayer_set_bpm(bpmAvantLooper);
+            bpmParLooper = false;
+            enregistreEtDis(sauveNom);
+          }
         }
         // DELETE : la question. Gauche / droite choisissent NO ou YES, A
         // valide ; B annule toujours, et ramene a la liste.
@@ -6495,6 +6523,24 @@ int main(void) {
     // leur propre effacement. Ils ne se repeignent QUE s'ils changent : une
     // question figee redessinee a chaque image donnait les memes bandes de
     // vieux televiseur que le menu, si la lecture tournait derriere.
+    else if (page == PAGE_PROJECT && demandeBpm) {   // le tempo change par le LOOPER : lequel enregistrer ?
+      static int vuChoix = -1;
+      if (ecranEfface || pageVue == -1 || vuChoix != (int)bpmNouveau) {
+        vuChoix = (int)bpmNouveau;
+        g_colOrigine = 0;
+        char a[16], b[16];
+        siprintf(a, "%d BPM", (int)(md_replayer_get_bpm() + 0.5));
+        siprintf(b, "%d BPM", (int)(bpmAvantLooper + 0.5));
+        for (int i = 0; i < 8; i++) efface(0, 3 + i, 41);
+        titre(0, 3, "BPM CHANGED", kEntete);
+        titre(0, 4, "BY THE LOOPER", kEntete);
+        titre(0, 6, "SAVE WITH:", kAttenue);
+        texte(0, 7, a, bpmNouveau ? kAccent : kVide);
+        texte(0, 8, b, bpmNouveau ? kVide : kAccent);
+        titre(0, 10, "L R: CHOOSE", kAttenue);
+        titre(0, 11, "A SAVE B CANCEL", kAttenue);
+      }
+    }
     else if (page == PAGE_PROJECT && demandeNouveau) {
       static bool vuQuestion = false;
       const bool refaireQ = ecranEfface || !vuQuestion;
