@@ -21,7 +21,7 @@ extern "C" {
 // Le mode percussion de la puce : cinq voies de plus, ses sons de batterie (BD, SD, TT, CY, HH : OPL_VOIX_PERC + 0..4),
 // sur les voies 7, 8 et 9 de la puce. Charger un instrument sur l'une d'elles met la puce en mode percussion ;
 // opl_voix_init l'en sort.
-#define OPL_VOIX_PERC OPL_NB_VOIES
+#define OPL_VOIX_PERC 64   // (au-dela des voies des samples, 18 et plus : les arreter ne touche pas la batterie)
 
 void opl_voix_init(void);
 // Charge un instrument (onze octets au format A2M) ; `pan` 0-255, 128 centre.
