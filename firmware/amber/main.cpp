@@ -1055,7 +1055,7 @@ int main(void) {
   // ce moment-la). De DEFAULT, revenir sur CURRENT rend les sons d'avant (sonCourant). Une autre molette
   // apres DEFAULT : SELECT repart de FM, AM.
   int selPos = 0; bool defautPris = false;
-  // EDIT : le son d'avant les molettes (SONG, CHAIN, PHRASE, INSTR, LOOPER ; pas KNOB GENERAL, qui a son DEFAULT).
+  // EDIT : le son d'avant les molettes (SONG, CHAIN, PHRASE, INSTR, LOOPER ; KNOB GENERAL : sonDefaut, plus bas).
   // Chaque instrument est retenu juste avant que les molettes le touchent la premiere fois ; EDIT les remet tous
   // et clignote tant qu'il y a quelque chose a remettre. Huit au plus (la memoire du chargement des .A2M).
   static int editIns[8];
@@ -1064,6 +1064,8 @@ int main(void) {
   // SAVE : un morceau ouvert d'un .A2M s'y reenregistre tant qu'il tient tout entier dans un .A2M (decide a
   // l'ouverture de la fenetre du nom : saveEnA2m) ; sinon, et pour tout autre morceau, en .OBT.
   static bool ouvertA2m = false, saveEnA2m = false;
+  // ... et le .A2M ouvert : efface quand le morceau passe en .OBT (on le retrouve par EXPORT A2M)
+  static char origineA2m[128] = "";
   // (sur le tas, seulement quand on s'en sert, et rendus au chargement d'un morceau : l'import d'un gros .A2M
   // a besoin de toute la memoire vive)
   static uint8_t (*sonDefaut)[MD_OPL_OCTETS] = nullptr, (*sonCourant)[MD_OPL_OCTETS] = nullptr;
@@ -2158,6 +2160,15 @@ int main(void) {
       ok = md_enregistre_a2m(chemin, compteSauve, sizeof compteSauve);
 #endif
       journal(compteSauve);
+#ifdef FM1
+      // Passe en .OBT : le .A2M d'ou il venait s'efface (pas deux versions du meme morceau ; EXPORT A2M le refait)
+      if (ok && !saveEnA2m && ouvertA2m && origineA2m[0]) {
+        remove(origineA2m);
+        journal(origineA2m);
+        ouvertA2m = false;
+        origineA2m[0] = 0;
+      }
+#endif
       if (ok) { strncpy(dernierNom, chemin, 63); dernierNom[63] = 0;
                 strncpy(nomProjet, propre, 15); nomProjet[15] = 0; }
     }
@@ -2233,6 +2244,7 @@ int main(void) {
       char compte[64];
       bool ok = md_importe_a2m(chemin, compte, sizeof compte);
       ouvertA2m = ok;
+      snprintf(origineA2m, sizeof origineA2m, "%s", ok ? chemin : "");
       if (ok) {
         char compteOps[64] = "";
         if (md_charge_ops(chemin, compteOps, sizeof compteOps) || compteOps[0])
@@ -3511,7 +3523,7 @@ int main(void) {
           fm1_annonce2(FM1_PRESET_NOMS[presetSel], l2);
         }
       }
-      // KNOB GENERAL, SELECT : FM, AM (la moitie des sons, un sur deux), CURRENT, DEFAULT (selPos, plus haut).
+      // KNOB GENERAL, SELECT : FM, AM (la moitie des sons, un sur deux) (selPos, plus haut) ; les sons d'avant : EDIT.
       // Les sons qui servent : un seul passage sur les phrases (le faire pour chaque instrument prenait des
       // centaines de milliers de lectures : la molette mettait longtemps a agir).
       if (page == PAGE_GLOBAL && pas[6]) {
@@ -3553,7 +3565,7 @@ int main(void) {
         };
         if (!sonsAlloues()) { fm1_annonce2("ALL SOUNDS", "MEMORY FULL"); pas[6] = 0; }
         else if (!defautPris) { photo(sonDefaut); defautPris = true; }
-        const int vise = !sonsAlloues() ? selPos : borne(selPos + pas[6], 0, 3);
+        const int vise = !sonsAlloues() ? selPos : borne(selPos + pas[6], 0, 1);   // (FM ou AM ; le son d'avant : EDIT)
         while (selPos != vise) {
           const int de = selPos;
           selPos += vise > selPos ? 1 : -1;
@@ -3576,7 +3588,7 @@ int main(void) {
           }
         }
         static const char *kSelNom[4] = { "FM", "AM", "CURRENT", "DEFAULT" };
-        fm1_annonce2("ALL SOUNDS", kSelNom[selPos]);
+        fm1_annonce3("ALL SOUNDS", kSelNom[selPos], "EDIT TO DEFAULT");
         modifie = true;
       }
       if (page == PAGE_GLOBAL) {                   // (SELECT n'est pas un reglage d'instrument ici)
@@ -3718,17 +3730,26 @@ int main(void) {
           if (!nbSons) { strcpy(l1, "NO OPL3"); strcpy(l2, "SOUNDS"); }
           modifie = true;
         }
-        if (!tous && editN) fm1_annonce3(l1, l2, "EDIT TO DEFAULT");
+        if ((!tous && editN) || (tous && defautPris)) fm1_annonce3(l1, l2, "EDIT TO DEFAULT");
         else fm1_annonce2(l1, l2);
       }
       // EDIT : les sons d'avant les molettes reviennent
-      fm1_edit_clignote(editN > 0);
-      if (fm1_edit_appuis() && editN && !navigateur && !dialogueNom) {
-        for (int e = 0; e < editN; e++)
+      // (et KNOB GENERAL : tous les sons d'avant son premier reglage, sonDefaut)
+      fm1_edit_clignote(editN > 0 || defautPris);
+      if (fm1_edit_appuis() && (editN || defautPris) && !navigateur && !dialogueNom) {
+        if (defautPris && sonDefaut) {
+          for (int i = 1; i <= MD_MAX_INSTRUMENTS; i++)
+            if (genreInstr(i) == GENRE_OPL)
+              for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(i, o, sonDefaut[i][o]);
+          memset(amAvant, 0, sizeof amAvant);
+          for (int k = 0; k < 6; k++) globalPousse[k] = 0;
+          demiAM = false; selPos = 0; defautPris = false;   // (le prochain reglage reprend une photo)
+        }
+        for (int e = 0; e < editN; e++)                   // (apres : ce que les molettes ont touche depuis)
           for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(editIns[e], o, editSon[e][o]);
-        fm1_annonce2(editN == 1 ? "SOUND" : "SOUNDS", "DEFAULT");
+        fm1_annonce2("SOUNDS", "DEFAULT");
         editN = 0;
-        if (page == PAGE_INSTR) modifie = true;
+        modifie = true;
       }
     }
 
@@ -6658,13 +6679,10 @@ int main(void) {
           texte(0, l0 + k, kMol[k], ce);                  // les memes que sur les autres pages, SEL entre les deux)
           if (zoomNiv != 2) texte(4, l0 + k, kQuoi[k], ce);
         }
-        // « SEL FM DEFAULT » : DEFAULT toujours ecrit (on voit qu'on peut y aller), et devant lui FM, AM ou
-        // CUR (CURRENT) ; ce qui est choisi en jaune, l'autre efface
-        { static const char *kSelCourt[3] = { "FM", "AM", "CUR" };
-          texte(0, l0 + 6, "SEL", kData);
-          texte(4, l0 + 6, kSelCourt[selPos < 3 ? selPos : 2], selPos < 3 ? kSelection : kVide);
-          texte(8, l0 + 6, "DEFAULT", selPos == 3 ? kSelection : kVide); }
+        // « SEL FM » ou « SEL AM » ; dessous, comment revenir aux sons d'avant : EDIT
         texte(0, l0 + 6, "SEL", kEffet[4]);
+        texte(4, l0 + 6, selPos ? "AM" : "FM", kSelection);
+        titre(0, l0 + 7, "EDIT TO DEFAULT", kAttenue);
         if (!zoomNiv) titre(0, l0 + 8, "ALL SOUNDS AT ONCE", kAttenue);
         g_colOrigine = sauve;
       }
@@ -6849,7 +6867,7 @@ int main(void) {
         { "FX > CIRCUIT BENDING", "7 switches on the\nFM chip\n\nKNOBS: on/off\nLEFT/RIGHT: track\nA+RIGHT: bend track\nA+LEFT: unbend track" },
         { "FX > CIRCUIT BENDING 2", "K1: pitch\nK2: fine tune\nK3: clock pitch\n(pitch and speed)" },
         { "FX > GLITCH", "16 steps on the mix\n\nK1: on/off\nK2: other pattern\nUP/DOWN: step\nA+LEFT/RIGHT: effect" },
-        { "FX > KNOB GENERAL", "song knobs, on all\nsounds at once\n\nSEL: FM, half AM,\ncurrent, default" },
+        { "FX > KNOB GENERAL", "song knobs, on all\nsounds at once\n\nSEL: FM, half AM\nEDIT: default" },
         { "FX > MASTER FX", "7 effects on the mix\n\nKNOBS: amount\nUP/DOWN: effect\nA+LEFT/RIGHT: amount" },
       };
       const int nbParties = (int)(sizeof kAide / sizeof kAide[0]);
