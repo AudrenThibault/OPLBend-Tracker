@@ -57,7 +57,7 @@ def clavier(d, y0, H, BH, taille):
     morceau(6, [("←", BLEU), ("↓", BLEU), ("→", BLEU), ("SEL", PECHE), ("SEL", PECHE)],
             {0: ("↑", BLEU), 1: ("", None), 2: ("", None)})
     d.text((126 * X, (y0 + H / 2 - 8) * X), "..", font=pol(12), fill=TXT)
-    morceau(138, [("SEL", PECHE), ("SEL", PECHE), ("B", ROUGE), ("", None)], {0: ("PLAY", TURQ), 2: ("A", VERT)})
+    morceau(138, [("SEL", PECHE), ("B", ROUGE), ("B", ROUGE), ("", None)], {0: ("PLAY", TURQ), 2: ("A", VERT)})
 
 
 CADRE = (2, 56, 237, 186)                         # (l'ecran D-PAD : un cadre, la page SONG visible autour)

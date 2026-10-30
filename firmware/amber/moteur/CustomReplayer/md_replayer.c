@@ -1874,6 +1874,19 @@ static bool md_charge_entete(const uint8_t *data, uint32_t size,
       tr->mdcmd = MD_EMPTY;
     }
 
+  // Dans l'ordre du fichier : les instruments, PUIS leurs noms, puis les
+  // tables. Un .OBT se decompresse en avancant et repart du debut a chaque
+  // retour en arriere : lire chaque instrument puis son nom, plus loin, le
+  // faisait repartir 2 x 255 fois (un chargement trois a quatre fois plus long
+  // que celui d'un .A2M).
+  for (int i = 0; i < MD_MAX_INSTRUMENTS; i++)
+    md_read_instrument(MD_SRC(instr_off + i * rec, rec),
+                       &mod->instruments[i], version);
+  for (int i = 0; i < MD_MAX_INSTRUMENTS; i++) {
+    memcpy(mod->instr_names[i], MD_SRC(names_off + i * 43, 43), 43);
+    mod->instr_names[i][42] = '\0';
+  }
+
   // Les tables ne sont dans le fichier qu'à partir de la v7 ; avant, elles
   // restent celles qu'on vient d'initialiser à vide.
   const uint32_t tables_off = names_off + MD_NAMES_TABLE_SIZE;
@@ -1890,13 +1903,6 @@ static bool md_charge_entete(const uint8_t *data, uint32_t size,
         tr->mdcmd = md_mdcmd_from_file(d[6], version); tr->mdval = d[7];
       }
     }
-  }
-
-  for (int i = 0; i < MD_MAX_INSTRUMENTS; i++) {
-    md_read_instrument(MD_SRC(instr_off + i * rec, rec),
-                       &mod->instruments[i], version);
-    memcpy(mod->instr_names[i], MD_SRC(names_off + i * 43, 43), 43);
-    mod->instr_names[i][42] = '\0';
   }
 
   // ── En-têtes de la banque d'échantillons (v10) ──────────────────────────

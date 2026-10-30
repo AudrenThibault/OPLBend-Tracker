@@ -163,6 +163,7 @@ extern "C" void fm1_decales_efface(void);          // plus aucune valeur decalee
 extern "C" void fm1_decale_demi(int rangee, int col, int n);   // ces cellules : une demi-cellule a droite
 extern "C" int fm1_largeur_cellule_entete(void);   // ... et une de l'en-tete
 extern "C" void fm1_zoom(int niveau);              // ZOOM (menu PROJECT) : 0 OFF, 1 4 COL, 2 3 COL (le plus gros)
+extern "C" void fm1_luminosite(int v);             // LIGHT (menu PROJECT) : 0 le plus sombre, 15 le plus lumineux
 extern "C" void fm1_mots_entete_efface(void);      // oublie les titres places dans l'en-tete (fm1_mot_entete)
 extern "C" void fm1_molettes_instr(int on);        // SONG, CHAIN, PHRASE : KNOB 1..4 reglent l'instrument (fm1_fx_pas)
 extern "C" int fm1_page_perdue(void);              // un message du systeme a pris l'ecran : la page est a refaire
@@ -220,11 +221,16 @@ extern "C" void fm1_led_niveau(int id, int niv);   // une LED : 0 eteinte, 1 fai
 extern "C" void fm1_led_play_vert(int niv);        // la LED verte de PLAY (a part ; celle de la touche est rouge)
 enum { LED_FX = 2, LED_SEL = 3, LED_GLO = 7, LED_SAVE = 9, LED_HOME = 8, LED_PLAY = 12, LED_REC = 13 };   // (fm1_touches.h FM1_B_*)                  // le mode KEYS (SEQ clignote) : les 27 touches sont un clavier
 extern "C" void fm1_annonce2(const char *l1, const char *l2);   // une ou deux lignes en gros au milieu de l'ecran
+extern "C" void fm1_annonce2_evite(const char *l1, const char *l2, int rangee);   // la meme, sans cacher cette rangee
+extern "C" void fm1_annonce3(const char *l1, const char *l2, const char *petite);   // et une aide en petit dessous
+extern "C" int fm1_edit_appuis(void);              // EDIT appuye depuis la derniere fois
+extern "C" void fm1_edit_clignote(int on);         // EDIT clignote (des molettes ont change un son)
 extern "C" void fm1_suivre_lecture(int on);        // la vue suit le repere de lecture
 extern "C" void fm1_vu_chevron(int i);             // un point du repere de lecture
 extern "C" void fm1_ecran_chargement(void);        // « LOADING... », envoye tout de suite a l'afficheur
 extern "C" void fm1_ecran_attente(const char *mot); // ... un autre mot (« EXPORTING... »)
 extern "C" bool fm1_exporte_a2m(const char *chemin, char *msg, int cap);   // EXPORT A2M (compat/fm1_a2m_export.c)
+extern "C" bool fm1_morceau_tient_en_a2m(void);    // rien de ce qu'AT2 ne connait (SAVE en .A2M)
 extern "C" const char *fm1_fs_erreur(void);        // pourquoi la derniere ecriture a echoue (FLASH FULL...)
 extern "C" int fm1_fs_plein(void);                 // ... faute de place
 extern "C" void fm1_fs_raz_erreur(void);
@@ -1049,6 +1055,15 @@ int main(void) {
   // ce moment-la). De DEFAULT, revenir sur CURRENT rend les sons d'avant (sonCourant). Une autre molette
   // apres DEFAULT : SELECT repart de FM, AM.
   int selPos = 0; bool defautPris = false;
+  // EDIT : le son d'avant les molettes (SONG, CHAIN, PHRASE, INSTR, LOOPER ; pas KNOB GENERAL, qui a son DEFAULT).
+  // Chaque instrument est retenu juste avant que les molettes le touchent la premiere fois ; EDIT les remet tous
+  // et clignote tant qu'il y a quelque chose a remettre. Huit au plus (la memoire du chargement des .A2M).
+  static int editIns[8];
+  static uint8_t editSon[8][MD_OPL_OCTETS];
+  static int editN = 0;
+  // SAVE : un morceau ouvert d'un .A2M s'y reenregistre tant qu'il tient tout entier dans un .A2M (decide a
+  // l'ouverture de la fenetre du nom : saveEnA2m) ; sinon, et pour tout autre morceau, en .OBT.
+  static bool ouvertA2m = false, saveEnA2m = false;
   // (sur le tas, seulement quand on s'en sert, et rendus au chargement d'un morceau : l'import d'un gros .A2M
   // a besoin de toute la memoire vive)
   static uint8_t (*sonDefaut)[MD_OPL_OCTETS] = nullptr, (*sonCourant)[MD_OPL_OCTETS] = nullptr;
@@ -1166,6 +1181,7 @@ int main(void) {
   };
   bool suiviLecture = false;
   bool sortieMono = false;  // FM-1 : OUT (menu PROJECT), STEREO par defaut, MONO pour le haut-parleur
+  int lumiere = 15;         // FM-1 : LIGHT (menu PROJECT), 0 le plus sombre, F le plus lumineux (l'image, pas le retroeclairage)
   // PHRASE en ZOOM : comme les pistes de SONG, les groupes de colonnes (NOTE,
   // IN, CMD, FX1, FX2) apparaissent d'un coup quand le curseur passe le bord ;
   // les numeros de ligne restent a gauche. phGauche : le premier groupe montre.
@@ -1465,6 +1481,11 @@ int main(void) {
         fm1_sortie_mono(sortieMono);
         continue;
       }
+      if (!strncmp(l, "LIGHT=", 6)) {          // ... et LIGHT
+        lumiere = borne(atoi(l + 6), 0, 15);
+        fm1_luminosite(lumiere);
+        continue;
+      }
 #endif
       if (strncmp(l, "SAMPLES=", 8) != 0) continue;
       char *v = l + 8;
@@ -1486,6 +1507,7 @@ int main(void) {
 #ifdef FM1
     fprintf(f, "ZOOM=%d\n", zoomNiv);
     fprintf(f, "MONO=%d\n", sortieMono ? 1 : 0);
+    fprintf(f, "LIGHT=%d\n", lumiere);
 #endif
     fclose(f);
   };
@@ -1880,13 +1902,13 @@ int main(void) {
   int menuProjet = 0;
   // Les lignes du menu PROJECT. FM-1 : ZOOM juste avant ABOUT.
 #ifdef FM1
-  enum { kMenuZoom = 7, kMenuApropos = 8, kMenuSortie = 9, kMenuExport = 10, kMenuSuppr = 11, kMenuDernier = 11 };
+  enum { kMenuZoom = 7, kMenuApropos = 8, kMenuSortie = 9, kMenuExport = 10, kMenuSuppr = 11, kMenuLum = 12, kMenuDernier = 12 };
   // Les lignes MONTREES, dans l'ordre. menuProjet reste le numero de la ligne.
   // Ni PATTERN LEN (6 : pas sur un tracker facon LSDJ), ni SYNC / SYNC TEST
   // (4, 5 : le decalage entre les samples et la RetroWave de la DS ; le FM-1
   // n'a ni l'un ni l'autre).
   // EXPORT A2M juste sous SAVE.
-  static const int kMenuVu[] = { 0, 1, kMenuExport, 2, kMenuSuppr, 3, kMenuZoom, kMenuSortie, kMenuApropos };
+  static const int kMenuVu[] = { 0, 1, kMenuExport, 2, kMenuSuppr, 3, kMenuZoom, kMenuSortie, kMenuLum, kMenuApropos };
   static const int kMenuNbVu = (int)(sizeof kMenuVu / sizeof kMenuVu[0]);
   auto rangMenu = [](int id) { for (int i = 0; i < kMenuNbVu; i++) if (kMenuVu[i] == id) return i; return 0; };
   const int kColValMenu = 7;    // les valeurs, juste apres les noms courts (TEMPO)
@@ -2111,17 +2133,19 @@ int main(void) {
       // FM-1 : en .OBT (OPLBend Tracker) : le format du moteur, compresse
       // d'un tenant comme un .A2M (compat/fm1_obt.c). Un .XT ouvert se
       // reenregistre en .OBT, a cote.
-      siprintf(chemin, "%s%s.OBT", racines[r], propre);
+      // Un morceau ouvert d'un .A2M, qui y tient encore tout entier : en .A2M (saveEnA2m).
+      siprintf(chemin, "%s%s.%s", racines[r], propre, saveEnA2m ? "A2M" : "OBT");
       char compteSauve[64] = "";
+      char msgA2m[48];
       fm1_fs_raz_erreur();
-      ok = md_replayer_save_file(chemin);
+      ok = saveEnA2m ? fm1_exporte_a2m(chemin, msgA2m, sizeof msgA2m) : md_replayer_save_file(chemin);
       // Pas la place pour la nouvelle copie a cote de l'ancienne : on efface
       // l'ancienne et on recommence (le morceau est toujours en memoire).
       struct stat st;
       if (!ok && fm1_fs_plein() && stat(chemin, &st) == 0) {
         remove(chemin);
         fm1_fs_raz_erreur();
-        ok = md_replayer_save_file(chemin);
+        ok = saveEnA2m ? fm1_exporte_a2m(chemin, msgA2m, sizeof msgA2m) : md_replayer_save_file(chemin);
       }
       strncpy(g_raisonSave, ok ? "" : fm1_fs_erreur()[0] ? fm1_fs_erreur() : "WRITE ERROR", sizeof g_raisonSave - 1);
       siprintf(compteSauve, ok ? "XT : %s" : "XT : ECHEC %s (%s)", propre, g_raisonSave);
@@ -2198,14 +2222,17 @@ int main(void) {
     else if (g_loopEtat == 1 || g_loopEtat == 5) g_loopEtat = 0;
     loopSilence();
     selPos = 0; defautPris = false;                // (les sons par defaut : ceux du morceau charge)
+    editN = 0;                                     // (EDIT : plus rien a remettre, ce sont d'autres sons)
     free(sonDefaut); free(sonCourant); sonDefaut = sonCourant = nullptr;
     bendPitch = bendFin = bendHorloge = 0; horlogeMaj();   // (et CIRCUIT BENDING 2)
 #endif
     // Un module AdLib Tracker 2 est IMPORTE : converti en SONG/CHAIN/PHRASE.
     const int Ln = (int)strlen(nom);
+    ouvertA2m = false;
     if (Ln >= 5 && !strcasecmp(nom + Ln - 4, ".a2m")) {
       char compte[64];
       bool ok = md_importe_a2m(chemin, compte, sizeof compte);
+      ouvertA2m = ok;
       if (ok) {
         char compteOps[64] = "";
         if (md_charge_ops(chemin, compteOps, sizeof compteOps) || compteOps[0])
@@ -2993,6 +3020,7 @@ int main(void) {
       saveAvant = page; saveRetour = true;
       page = PAGE_PROJECT; menuProjet = 1;
       strncpy(sauveNom, nomProjet, 8); sauveNom[8] = 0;
+      saveEnA2m = ouvertA2m && fm1_morceau_tient_en_a2m();
       dialogueNom = true; nomLig = 3; nomCol = 9;
       assombrirDemande = true;
       pageVue = -1;
@@ -3606,6 +3634,15 @@ int main(void) {
         // on n'entend que le clavier et le morceau.
         char l1[12] = "NO OPL3", l2[24] = "INSTRUMENT";
         while (ins) {                                    // (une fois ; sur KNOB GENERAL, chaque son)
+          if (!tous) {                                   // (EDIT : le son tel qu'avant les molettes)
+            bool deja = false;
+            for (int e = 0; e < editN; e++) if (editIns[e] == ins) deja = true;
+            if (!deja && editN < 8) {
+              editIns[editN] = ins;
+              for (int o = 0; o < MD_OPL_OCTETS; o++) editSon[editN][o] = md_replayer_get_instr_opl(ins, o);
+              editN++;
+            }
+          }
           // (KNOB 2 : LENGTH plutot que la sortie de la porteuse, qui en FM ne
           // fait que le volume de l'instrument ; il se calcule a part, plus bas)
           static const int octet[6] = { MD_OPL_VOL_M, MD_OPL_AD_C, MD_OPL_FB_CONN, MD_OPL_FLAGS_M,
@@ -3681,7 +3718,17 @@ int main(void) {
           if (!nbSons) { strcpy(l1, "NO OPL3"); strcpy(l2, "SOUNDS"); }
           modifie = true;
         }
-        fm1_annonce2(l1, l2);
+        if (!tous && editN) fm1_annonce3(l1, l2, "EDIT TO DEFAULT");
+        else fm1_annonce2(l1, l2);
+      }
+      // EDIT : les sons d'avant les molettes reviennent
+      fm1_edit_clignote(editN > 0);
+      if (fm1_edit_appuis() && editN && !navigateur && !dialogueNom) {
+        for (int e = 0; e < editN; e++)
+          for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(editIns[e], o, editSon[e][o]);
+        fm1_annonce2(editN == 1 ? "SOUND" : "SOUNDS", "DEFAULT");
+        editN = 0;
+        if (page == PAGE_INSTR) modifie = true;
       }
     }
 
@@ -4447,7 +4494,7 @@ int main(void) {
         }
       }
 #endif
-      if (frappe & KEY_UP)   { if (page != PAGE_PROJECT) derniereRangee = page;
+      if (frappe & KEY_UP)   { if (page != PAGE_PROJECT) { derniereRangee = page; menuProjet = 0; }   // (le curseur en haut, sur TEMPO)
                                page = PAGE_PROJECT; }
       if (frappe & KEY_DOWN) {
         if (page == PAGE_PROJECT) {
@@ -4560,8 +4607,19 @@ int main(void) {
         // SELECT + A : coller. Avec une selection armee et l'accord B en
         // cours, c'est le clone profond.
         if ((frappe & KEY_A) && page <= PAGE_PHRASE) {
-          if (selActive && (accordSelB || (keysHeld() & KEY_B))) cloneProfond();
-          else coller();
+          if (selActive && (accordSelB || (keysHeld() & KEY_B))) {
+            const bool clone = !(page == PAGE_PHRASE && phCol != 1);   // (sur PHRASE, seulement la colonne INSTRUMENT)
+            cloneProfond();
+#ifdef FM1
+            if (clone) fm1_annonce2("DEEP CLONED", 0);
+#endif
+          } else {
+            const bool colle = clipPage == page && clipLignes > 0;
+            coller();
+#ifdef FM1
+            if (colle) fm1_annonce2("PASTED", 0);
+#endif
+          }
 #ifdef FM1
           collageEch = fm1_echantillons() | 1u;     // (SELECT + droite n'y entre pas tout de suite)
 #endif
@@ -4587,7 +4645,13 @@ int main(void) {
       // B relache sans avoir servi a autre chose : on copie la selection.
       // Sans selection armee, il ne se passe rien — c'est ce que fait
       // copySelection() cote iPad, qui sort sur « NOTHING SELECTED ».
-      if ((relache & KEY_B) && !bUtilise && page <= PAGE_PHRASE) copier();
+      if ((relache & KEY_B) && !bUtilise && page <= PAGE_PHRASE) {
+        const bool copie = selActive;
+        copier();
+#ifdef FM1
+        if (copie) fm1_annonce2("COPIED", 0);
+#endif
+      }
 
       // ── B + haut/bas : le grand saut dans SONG ─────────────────────────
       // Et RIEN D'AUTRE. B + croix reglait aussi le tempo depuis n'importe
@@ -5377,6 +5441,7 @@ int main(void) {
           if (frappe & KEY_A) {
             md_replayer_stop(); enLecture = false;
             md_replayer_new_empty();
+            ouvertA2m = false;
 #ifdef FM1
             fm1ProjetDepart();
 #endif
@@ -5415,6 +5480,13 @@ int main(void) {
             sortieMono = !sortieMono;
             fm1_sortie_mono(sortieMono);
             ecrisCfg();
+          }
+          // LIGHT : A + droite / gauche, plus ou moins lumineux (0 a F)
+          if (menuProjet == kMenuLum && (keysHeld() & KEY_A) && (appui & (KEY_LEFT | KEY_RIGHT))) {
+            lumiere = borne(lumiere + ((appui & KEY_RIGHT) ? 1 : -1), 0, 15);
+            fm1_luminosite(lumiere);
+            ecrisCfg();
+            pageVue = -1;                         // (la valeur, repeinte)
           }
 #endif
 
@@ -5464,6 +5536,7 @@ int main(void) {
               strncpy(sauveNom, nomProjet, 8); sauveNom[8] = 0;
               // Le curseur se pose d'emblee sur OK : reenregistrer un projet
               // qui a deja son nom se fait alors en deux touches.
+              saveEnA2m = ouvertA2m && fm1_morceau_tient_en_a2m();
               dialogueNom = true; nomLig = 3; nomCol = 9;
               assombrirDemande = true;
               // La page est VIDEE avant d'ouvrir la fenetre : le menu assombri
@@ -6767,8 +6840,8 @@ int main(void) {
         { "CHAIN > PHRASE", "notes, instruments,\nvolumes, commands\n\nSEL+RIGHT: instrument\nSEL+LEFT: chain" },
         { "PHRASE > INSTR", "the OPL3 sound\n\nSEL+LEFT/RIGHT: page\nA+LEFT/RIGHT: value\n\non TABLE (last page):\nSEL+RIGHT: table" },
         { "INSTR > TABLE", "steps on each note\n\nSEL+LEFT: instrument" },
-        { "SEL+UP > PROJECT", "tempo, save, export,\nload, delete, new,\nzoom, out, about\n\nA: open\nA+LEFT/RIGHT: value" },
-        { "BUTTONS", "HOME: song\nSEL: presets\nFX: effects\nSEQ: tracker, drums, looper\nREC: record\nOCT-/OCT+: octave\nSAVE: save\nGLO: keyboard, d-pad,\ndrum keyboard\nENV: help" },
+        { "SEL+UP > PROJECT", "tempo, save, export,\nload, delete, new,\nzoom, out, light, about\n\nA: open\nA+LEFT/RIGHT: value" },
+        { "BUTTONS", "HOME: song\nSEL: presets\nFX: effects\nSEQ: tracker, drums, looper\nREC: record\nOCT-/OCT+: octave\nSAVE: save\nEDIT: undo the knobs\nGLO: keyboard, d-pad,\ndrum keyboard\nENV: help" },
         { "KNOBS", "SELECT: tempo\n\nin the tracker:\nK1: modulator level\nK2: note length\nK3: feedback\nK4: modulator mult\nPRESETS: op1 wave\n(then FM, AM)\nALGORITHM: op2 wave" },
         { "SEL > PRESETS", "2103 OPL3 sounds\n\nSELECT: next sound\nSEL: back" },
         { "REC", "playing: records now\n\nstopped, on phrase:\nnote by note, then\nPLAY records live\n\nstopped, song/chain:\n4 beat count-in\n\nREC: stop" },
@@ -6979,7 +7052,7 @@ int main(void) {
 #ifdef FM1
       const char *entrees[kMenuDernier + 1] = { "TEMPO", "SAVE", "LOAD",
                                  "NEW", "SYNC", "SYNC TEST",
-                                 "", "ZOOM", "ABOUT", "OUT", "EXPORT A2M", "DELETE" };
+                                 "", "ZOOM", "ABOUT", "OUT", "EXPORT A2M", "DELETE", "LIGHT" };
 #else
       const char *entrees[8] = { "TEMPO", "SAVE SONG", "LOAD SONG",
                                  "NEW SONG", "SYNC", "SYNC TEST",
@@ -7041,10 +7114,10 @@ int main(void) {
 #endif
         texte(kColValMenu, 4 + rangMenu(0), d, (menuProjet == 0) ? kEntete : kData); }
 #ifdef FM1
-      // FM-1 : le nom du morceau charge, sous le menu, apres une ligne vide.
+      // FM-1 : plus de nom du morceau sous le menu : il tombait sous le bas de l'ecran, coupe (des traits
+      // bizarres apres SAVE). Le nom se lit dans la fenetre de SAVE.
+      efface(0, 4 + kMenuNbVu, kCols);
       efface(0, 4 + kMenuNbVu + 1, kCols);
-      fm1_rangee_vide(4 + kMenuNbVu);
-      texte(0, 4 + kMenuNbVu + 1, nomProjet, kTitre);
 #else
       texte(kColValMenu, 4 + rangMenu(1), nomProjet[0] ? nomProjet : "(UNNAMED)", kData);
 #endif
@@ -7072,6 +7145,9 @@ int main(void) {
       // (OUT a deux lettres de moins que TEMPO : sa valeur commence plus tot, STEREO tient en ZOOM)
       efface(5, 4 + rangMenu(kMenuSortie), kCols - 5);
       texte(5, 4 + rangMenu(kMenuSortie), sortieMono ? "MONO" : "STEREO", (menuProjet == kMenuSortie) ? kEntete : kData);
+      { const char lv[2] = { "0123456789ABCDEF"[lumiere & 15], 0 };
+        efface(kColValMenu, 4 + rangMenu(kMenuLum), kCols - kColValMenu);
+        texte(kColValMenu, 4 + rangMenu(kMenuLum), lv, (menuProjet == kMenuLum) ? kEntete : kData); }
 #else
       { const int lp = md_replayer_get_patt_len();
         char d[20];
@@ -7080,8 +7156,8 @@ int main(void) {
         efface(14, 10, kCols - 14);
         texte(14, 10, d, (menuProjet == 6) ? kEntete : kData); }
 #endif
+#ifndef FM1   // (la puce OPL3 en USB de la DS : pas sur le FM-1, ou cette rangee est celle d'ABOUT)
       efface(0, 13, kCols);
-#ifndef FM1   // (la puce OPL3 en USB de la DS : pas sur le FM-1)
       texte(0, 13, xt_midi_present() ? "RETROWAVE OK" : "NO RETROWAVE",
             xt_midi_present() ? kTitre : kAccent);
 #endif
@@ -7989,12 +8065,13 @@ int main(void) {
         efface(0, 3 + l, 41);                      // (un cadre de selection d'avant s'en va)
 #endif
         dessineNumero(haut + l);
-        for (int c = gaucheVoie; c < gaucheVoie + nbVoiesVues; c++) {
-          // La colonne du chevron AUSSI : sinon les anciens chevrons rouges
-          // restent a l'ecran en defilant.
-          efface(colDe(c) - 1, 3 + l, 1);
+        // La colonne du chevron AUSSI : sinon les anciens chevrons rouges
+        // restent a l'ecran en defilant. Toutes AVANT les cases : la case du
+        // chevron d'une voie est juste a droite de la voie d'avant, et l'effacer
+        // apres coup mangeait le point de droite du curseur.
+        for (int c = gaucheVoie; c < gaucheVoie + nbVoiesVues; c++) efface(colDe(c) - 1, 3 + l, 1);
+        for (int c = gaucheVoie; c < gaucheVoie + nbVoiesVues; c++)
           dessineCase(c, haut + l, c == curCanal && haut + l == curLigne);
-        }
       }
 #ifdef FM1
       if (selActive) {                             // le cadre jaune, sur ce qui est a l'ecran
@@ -8022,6 +8099,7 @@ int main(void) {
     // Un chevron ROUGE devant la case que chaque piste est en train de jouer.
     // Les voies de la DS jouent sans avance : la ligne du moteur est celle
     // qu'on entend. On ne redessine que ceux qui ont bouge.
+    bool chevronsBouges = false;
     for (int c = gaucheVoie; c < gaucheVoie + nbVoiesVues && c < nbVisibles; c++) {
       const int colC = colDe(c) - 1;
       int r = enLecture ? md_replayer_play_song_row(reel(c)) : -1;
@@ -8038,7 +8116,10 @@ int main(void) {
         }
       }
       repereVu[c] = r;
+      chevronsBouges = true;
     }
+    // (effacer un chevron mange le point de droite du curseur, s'il est sur la voie d'avant : on le remet)
+    if (chevronsBouges) dessineCase(curCanal, curLigne, true);
 
     }  // fin de la page SONG
 
@@ -8171,11 +8252,13 @@ int main(void) {
               if (lg / 2 - d > 0 && nm[lg / 2 - d] == ' ') coupe = lg / 2 - d;
               else if (lg / 2 + d < lg && nm[lg / 2 + d] == ' ') coupe = lg / 2 + d;
             }
+          // (au-dessus ou en dessous du curseur, jamais par-dessus)
+          const int rangeeCur = 3 + (page == PAGE_PHRASE ? phLigne : tabLigne);
           if (coupe > 0) {
             snprintf(l1, sizeof l1, "%.*s", coupe, nm);
             snprintf(l2, sizeof l2, "%s", nm + coupe + 1);
-            fm1_annonce2(l1, l2);
-          } else fm1_annonce2(nm, 0);
+            fm1_annonce2_evite(l1, l2, rangeeCur);
+          } else fm1_annonce2_evite(nm, 0, rangeeCur);
         }
         vuPos = pos;
         snprintf(vuNomPos, sizeof vuNomPos, "%s", nm ? nm : "");
@@ -8354,7 +8437,7 @@ int main(void) {
         siprintf(champ, "%-8s", n2);
         for (int k = 0; k < 8; k++) if (champ[k] == ' ') champ[k] = '_';
         texte(0, 3, champ, kData);
-        titre(8, 3, ".OBT", kAttenue);
+        titre(8, 3, saveEnA2m ? ".A2M" : ".OBT", kAttenue);
         fm1_rangee_espace(4);
         // L'ecart des lettres : deux cases sans zoom, une case et demie en
         // 4 COL (une sur deux decalee d'une demi-case : toute la largeur), une
@@ -8441,7 +8524,8 @@ int main(void) {
         // (le message s'y eparpillait, mot par mot) : il prend la place de
         // l'en-tete, le nom de la page et les titres qui y sont, le temps de
         // se lire ; a la largeur de l'en-tete.
-        if (page != PAGE_PROJECT && aVoir[0]) {
+        // (PROJECT aussi : sa rangee 1 s'affiche tout en bas, coupee : des traits bizarres apres SAVE)
+        if (aVoir[0]) {
           fm1_nom_page("");
           fm1_mots_entete_efface();
           efface(0, 0, kCols);
@@ -8451,7 +8535,7 @@ int main(void) {
 #endif
         efface(0, 1, kCols);
 #ifdef FM1
-        if (page != PAGE_PROJECT && aVoir[0]) {
+        if (aVoir[0]) {
           // (deja dans l'en-tete)
         } else
 #endif

@@ -757,12 +757,12 @@ static bool ex_exporte(const char *chemin, char *msg, int cap)
                 int r;
                 if (ch == MD_EMPTY)
                     continue;
-                for (r = MD_ROWS_PER_CHAIN - 1; r >= 0; r--)
-                    if (ex_m->chains[ch % MD_MAX_CHAINS].rows[r].phrase != MD_EMPTY) {
-                        if ((r + 1) * MD_ROWS_PER_PHRASE > ex_lg)
-                            ex_lg = (r + 1) * MD_ROWS_PER_PHRASE;
-                        break;
-                    }
+                /* (la derniere ligne du chain qui a une phrase ; en avancant : a reculer, le compilateur fait une
+                   lecture « b[r++=-2] » que l'emulateur en ligne ne connait pas) */
+                for (r = 0; r < MD_ROWS_PER_CHAIN; r++)
+                    if (ex_m->chains[ch % MD_MAX_CHAINS].rows[r].phrase != MD_EMPTY &&
+                        (r + 1) * MD_ROWS_PER_PHRASE > ex_lg)
+                        ex_lg = (r + 1) * MD_ROWS_PER_PHRASE;
             }
     }
     if (ex_lg > EX_LIGNES)
@@ -836,5 +836,62 @@ static bool ex_exporte(const char *chemin, char *msg, int cap)
         }
     }
     snprintf(msg, (size_t)cap, "%d PATTERNS", ex_nb_patterns);
+    return true;
+}
+
+/* Le morceau tient-il TOUT ENTIER dans un .A2M ? (SAVE : un morceau ouvert d'un .A2M s'y reenregistre tant que
+   rien ne se perdrait.) Ce que l'export ne garde pas fait dire non : VEL, CMD, FX3 / FX4, une table, un sample,
+   la DRUM MACHINE, une piste au-dela des OPL3, une ligne de SONG apres la premiere vide, une ligne au-dela de la
+   longueur des patterns. Seul le H qui traduit cette longueur (pose a l'ouverture du .A2M) ne compte pas. */
+bool fm1_morceau_tient_en_a2m(void)
+{
+    const md_module_t *m = md_replayer_get_module();
+    int t, k, r, p, lignes = 0;
+    if (!m)
+        return false;
+    for (k = 0; k < 16; k++)
+        if (m->drum_pas[k])
+            return false;
+    while (lignes < MD_SONG_ROWS) {               /* (comme l'export : jusqu'a la premiere ligne vide partout) */
+        int quelque = 0;
+        for (t = 0; t < m->num_channels && t < MD_PISTES_OPL && !quelque; t++)
+            quelque = m->song[t][lignes] != MD_EMPTY;
+        if (!quelque)
+            break;
+        lignes++;
+    }
+    for (t = 0; t < m->num_channels && t < MD_MAX_CHANNELS; t++)
+        for (k = 0; k < MD_SONG_ROWS; k++) {
+            const uint8_t ch = m->song[t][k];
+            if (ch == MD_EMPTY)
+                continue;
+            if (t >= MD_PISTES_OPL || k >= lignes)
+                return false;
+            for (r = 0; r < MD_ROWS_PER_CHAIN; r++) {
+                const md_chain_row_t *cr = &m->chains[ch % MD_MAX_CHAINS].rows[r];
+                if (cr->phrase == MD_EMPTY)
+                    continue;
+                for (p = 0; p < MD_ROWS_PER_PHRASE; p++) {
+                    md_phrase_row_t rangee;       /* (copiee : lue en place, une lecture « b[++r=-6] » que
+                                                     l'emulateur en ligne ne connait pas) */
+                    const md_phrase_row_t *pr = &rangee;
+                    memcpy(&rangee, &m->phrases[cr->phrase % MD_MAX_PHRASES].rows[p], sizeof rangee);
+                    const int ligne = r * MD_ROWS_PER_PHRASE + p;
+                    const int saut = pr->cmd != MD_EMPTY && md_table_cmd_kind(pr->cmd) == MD_CMD_HOP &&
+                                     m->patt_len && ligne == (int)m->patt_len;
+                    const int vide = !pr->note && !pr->instr && pr->mdcmd == MD_EMPTY && pr->cc[0] == MD_EMPTY;
+                    if (pr->vel != MD_EMPTY || (pr->cmd != MD_EMPTY && !saut) || pr->cc[1] != MD_EMPTY ||
+                        pr->cc[2] != MD_EMPTY)
+                        return false;
+                    if (m->patt_len && ligne >= (int)m->patt_len && !vide)
+                        return false;             /* (au-dela de la longueur des patterns : perdu) */
+                    if (pr->instr) {
+                        const md_instr_t *in = &m->instruments[(pr->instr - 1) % MD_MAX_INSTRUMENTS];
+                        if (in->kind != MD_INSTR_KIND_OPL || in->table != MD_EMPTY)
+                            return false;
+                    }
+                }
+            }
+        }
     return true;
 }

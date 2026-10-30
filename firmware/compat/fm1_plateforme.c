@@ -858,9 +858,10 @@ static const uint8_t *ligne_image(uint32_t ly)   /* la ligne de l'image montree 
 /* L'ANNONCE : une ou deux lignes en gros au milieu de l'ecran (le mode KEYS / TRACKER, la valeur qu'une molette
    regle, le tempo), par-dessus la page, a la meme taille quel que soit le ZOOM, une seconde apres la derniere.
    Chaque ligne est aussi grosse qu'elle peut (lettres de 20 x 28 au plus) dans la largeur de l'ecran. */
-static char s_annonce[2][24];
+static char s_annonce[3][24];                     /* (la troisieme : petite, une aide, EDIT TO DEFAULT) */
+static char s_annonce_petite[24];
 static uint32_t s_annonce_images, s_annonce_fin;   /* (montree tant que fm1_ms n'a pas atteint s_annonce_fin) */
-static uint32_t s_ann_ech[2], s_ann_x0[2], s_ann_y0[2], s_ann_bx0, s_ann_bx1, s_ann_by0, s_ann_by1;
+static uint32_t s_ann_ech[3], s_ann_x0[3], s_ann_y0[3], s_ann_bx0, s_ann_bx1, s_ann_by0, s_ann_by1;
 static int32_t s_ann_neuf_y0 = -1, s_ann_neuf_y1 = -1;   /* les lignes de l'afficheur a renvoyer cette fois */
 #define ANNONCE_MARGE 10u
 static void ann_a_renvoyer(uint32_t y0, uint32_t y1)
@@ -868,17 +869,17 @@ static void ann_a_renvoyer(uint32_t y0, uint32_t y1)
     if (s_ann_neuf_y0 < 0 || (int32_t)y0 < s_ann_neuf_y0) s_ann_neuf_y0 = (int32_t)y0;
     if ((int32_t)y1 > s_ann_neuf_y1) s_ann_neuf_y1 = (int32_t)y1;
 }
-void fm1_annonce2(const char *l1, const char *l2)
+static void annonce_place(const char *l1, const char *l2, uint32_t ech_max)   /* au milieu, lettres de ech_max au plus */
 {
-    uint32_t k, h = 0, w = 0, n[2];
-    if (s_annonce_images)
-        ann_a_renvoyer(s_ann_by0, s_ann_by1);    /* (l'ancien cadre, s'il etait plus grand) */
+    uint32_t k, h = 0, w = 0, n[3];
     str_cpy(s_annonce[0], l1 ? l1 : "", sizeof s_annonce[0]);
     str_cpy(s_annonce[1], l2 ? l2 : "", sizeof s_annonce[1]);
-    for (k = 0; k < 2u; k++) {
+    str_cpy(s_annonce[2], s_annonce_petite, sizeof s_annonce[2]);
+    s_annonce_petite[0] = 0;                      /* (une seule fois : fm1_annonce3 la pose) */
+    for (k = 0; k < 3u; k++) {
         n[k] = (uint32_t)strlen(s_annonce[k]);
         s_ann_ech[k] = n[k] ? (240u - 2u * ANNONCE_MARGE - 4u) / ((MD_FONT_W + 1u) * n[k]) : 0u;
-        if (s_ann_ech[k] > 4u) s_ann_ech[k] = 4u;
+        if (s_ann_ech[k] > (k == 2u ? (ech_max < 2u ? ech_max : 2u) : ech_max)) s_ann_ech[k] = k == 2u ? (ech_max < 2u ? ech_max : 2u) : ech_max;
         if (n[k] && !s_ann_ech[k]) s_ann_ech[k] = 1u;
         if (n[k]) {
             const uint32_t lw = n[k] * (MD_FONT_W + 1u) * s_ann_ech[k] - s_ann_ech[k];
@@ -893,11 +894,64 @@ void fm1_annonce2(const char *l1, const char *l2)
     s_ann_bx1 = s_ann_bx0 + w + 2u * ANNONCE_MARGE - 1u;
     s_ann_y0[0] = s_ann_by0 + ANNONCE_MARGE;
     s_ann_y0[1] = s_ann_y0[0] + (n[0] ? MD_FONT_HT * s_ann_ech[0] + 8u : 0u);
+    s_ann_y0[2] = s_ann_y0[1] + (n[1] ? MD_FONT_HT * s_ann_ech[1] + 8u : 0u);
+}
+static void annonce_monte(int32_t y)              /* le cadre commence a la ligne y de l'afficheur */
+{
+    const int32_t d = y - (int32_t)s_ann_by0;
+    s_ann_by0 = (uint32_t)((int32_t)s_ann_by0 + d);
+    s_ann_by1 = (uint32_t)((int32_t)s_ann_by1 + d);
+    s_ann_y0[0] = (uint32_t)((int32_t)s_ann_y0[0] + d);
+    s_ann_y0[1] = (uint32_t)((int32_t)s_ann_y0[1] + d);
+    s_ann_y0[2] = (uint32_t)((int32_t)s_ann_y0[2] + d);
+}
+static void annonce_montre(void)
+{
     s_annonce_images = 1u;
     s_annonce_fin = fm1_ms + 1000u;               /* une seconde apres la derniere */
     ann_a_renvoyer(s_ann_by0, s_ann_by1);
 }
+void fm1_annonce2(const char *l1, const char *l2)
+{
+    if (s_annonce_images)
+        ann_a_renvoyer(s_ann_by0, s_ann_by1);    /* (l'ancien cadre, s'il etait plus grand) */
+    annonce_place(l1, l2, 4u);
+    annonce_montre();
+}
+/* La meme, sans cacher la rangee `rangee` de l'image (celle du curseur) : au milieu si elle n'y est pas, sinon
+   au-dessus ou en dessous (du cote ou il y a le plus de place), en plus petit s'il le faut. Elle suit le ZOOM :
+   la rangee est cherchee la ou l'afficheur la montre. */
+void fm1_annonce2_evite(const char *l1, const char *l2, int rangee)
+{
+    int32_t cy0 = -1, cy1 = -1, ly;
+    uint32_t e;
+    if (s_annonce_images)
+        ann_a_renvoyer(s_ann_by0, s_ann_by1);
+    for (ly = 0; ly < 240; ly++)
+        if (s_ly_src[ly] >= 0 && rangee >= 0 && (uint32_t)s_ly_src[ly] / FM1_CELL_H == (uint32_t)rangee) {
+            if (cy0 < 0) cy0 = ly;
+            cy1 = ly;
+        }
+    for (e = 4u; e >= 1u; e--) {
+        int32_t h;
+        annonce_place(l1, l2, e);
+        if (cy0 < 0 || (int32_t)s_ann_by1 < cy0 - 2 || (int32_t)s_ann_by0 > cy1 + 2)
+            break;                                /* (le curseur n'est pas dessous) */
+        h = (int32_t)(s_ann_by1 - s_ann_by0) + 1;
+        if (cy0 >= 240 - cy1 - 1) {               /* (plus de place au-dessus) */
+            if (cy0 - 3 - h >= 0) { annonce_monte(cy0 - 3 - h); break; }
+        } else if (cy1 + 3 + h <= 240) { annonce_monte(cy1 + 3); break; }
+        if (e == 1u)                              /* (nulle part : du cote le plus grand, tant pis) */
+            annonce_monte(cy0 >= 240 - cy1 - 1 ? 0 : 240 - h);
+    }
+    annonce_montre();
+}
 static void fm1_annonce(const char *mot) { fm1_annonce2(mot, 0); }
+void fm1_annonce3(const char *l1, const char *l2, const char *petite)   /* deux lignes, et une aide en petit dessous */
+{
+    str_cpy(s_annonce_petite, petite ? petite : "", sizeof s_annonce_petite);
+    fm1_annonce2(l1, l2);
+}
 /* la ligne ly de l'afficheur, par-dessus : le cadre et les lignes */
 static void annonce_ligne(uint16_t *l, uint32_t ly, uint16_t fond, uint16_t encre, uint16_t bord)
 {
@@ -906,7 +960,7 @@ static void annonce_ligne(uint16_t *l, uint32_t ly, uint16_t fond, uint16_t encr
         return;
     for (x = s_ann_bx0; x <= s_ann_bx1; x++)
         l[x] = (ly == s_ann_by0 || ly == s_ann_by1 || x == s_ann_bx0 || x == s_ann_bx1) ? bord : fond;
-    for (k = 0; k < 2u; k++) {
+    for (k = 0; k < 3u; k++) {
         const uint32_t e = s_ann_ech[k], n = (uint32_t)strlen(s_annonce[k]), pas = (MD_FONT_W + 1u) * e;
         if (!n || ly < s_ann_y0[k] || ly >= s_ann_y0[k] + MD_FONT_HT * e)
             continue;
@@ -1104,6 +1158,29 @@ static void traits_x(const uint16_t *carte, int32_t vue, int16_t *x)
     }
 }
 
+/* LIGHT (menu PROJECT) : l'image plus sombre, couleur par couleur, juste avant l'afficheur (le retroeclairage ne se
+   regle pas : sa broche est aussi celle qui fait lire le clavier). 15 : telle quelle, rien a faire ; 0 : un quart. */
+static uint8_t s_lum = 15u, s_lum5[32], s_lum6[64];
+void fm1_luminosite(int v)
+{
+    uint32_t k, f;
+    if (v < 0) v = 0;
+    if (v > 15) v = 15;
+    s_lum = (uint8_t)v;
+    f = 64u + (uint32_t)v * 192u / 15u;           /* (sur 256 : de 64 a 256) */
+    for (k = 0; k < 32u; k++) s_lum5[k] = (uint8_t)(k * f >> 8);
+    for (k = 0; k < 64u; k++) s_lum6[k] = (uint8_t)(k * f >> 8);
+    s_ecran_neuf = 1;                             /* (tout l'ecran, a la nouvelle lumiere) */
+}
+static void assombrit(uint16_t *p, uint32_t n)    /* RGB565, octets permutes (l'afficheur) */
+{
+    while (n--) {
+        const uint32_t v = (uint32_t)((*p >> 8) | (*p << 8)) & 0xFFFFu;
+        const uint32_t w = ((uint32_t)s_lum5[v >> 11] << 11) | ((uint32_t)s_lum6[(v >> 5) & 63u] << 5) | s_lum5[v & 31u];
+        *p++ = (uint16_t)((w >> 8) | (w << 8));
+    }
+}
+
 static void montre(void)
 {
     static uint16_t pan[256], pan_entete[256];
@@ -1189,6 +1266,8 @@ static void montre(void)
                 annonce_ligne(l, y0 + k, ds_vers_panneau(theme(0, 0)), ds_vers_panneau(theme(RGB15(29, 27, 31), 0)),
                               ds_vers_panneau(theme(RGB15(28, 9, 10), 0)));
         }
+        if (s_lum < 15u)
+            assombrit(d, 240u * n);
         lcd_blit(0, y0, 240, n, d);
     }
     s_ecran_neuf = 0;
@@ -1348,6 +1427,10 @@ static int32_t s_env;
 int fm1_env_appuis(void) { const int32_t n = s_env; s_env = 0; return (int)n; }
 /* SAVE : la fenetre de sauvegarde (ses appuis pas encore lus) */
 static int32_t s_save;
+static int32_t s_edit;
+static uint8_t s_edit_clignote;                   /* EDIT clignote : des molettes ont change un son (EDIT le remet) */
+int fm1_edit_appuis(void) { const int32_t n = s_edit; s_edit = 0; return (int)n; }
+void fm1_edit_clignote(int on) { s_edit_clignote = (uint8_t)(on != 0); }
 int fm1_save_appuis(void) { const int32_t n = s_save; s_save = 0; return (int)n; }
 /* Une fenetre de texte (le nom, le navigateur) : le mode KEYS s'efface le temps qu'elle est ouverte (la croix,
    A et B y redeviennent des touches). */
@@ -1443,8 +1526,9 @@ void scanKeys(void)
     if (enfonces & (1u << FM1_B_HOME)) s_home++;
     if (enfonces & (1u << FM1_B_FX)) s_fx++;
     if (enfonces & (1u << FM1_B_SAVE)) s_save++;
+    if (enfonces & (1u << FM1_B_EDIT)) s_edit++;
     if (enfonces & (1u << FM1_B_ENV)) s_env++;
-    fm1_led_niveau(FM1_B_EDIT, 0);                /* (EDIT ne fait rien) */
+    fm1_led_niveau(FM1_B_EDIT, s_edit_clignote ? ((fm1_ms / 250u) & 1u ? 2 : 0) : 0);   /* (EDIT : le son d'avant les molettes) */
     fm1_led_niveau(FM1_B_OCTDN, 1);
     fm1_led_niveau(FM1_B_OCTUP, 1);
     fm1_led_niveau(FM1_B_LFO, 0);

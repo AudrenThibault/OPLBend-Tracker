@@ -53,10 +53,10 @@ static const struct { unsigned ds; unsigned char fm1; } FM1_TOUCHES[] = {
   { KEY_RIGHT,  FM1_TOUCHE(4)  },   // le la
   { KEY_A,      FM1_TOUCHE(25) },   // le diese tout a droite, apres POLY
   { KEY_B,      FM1_TOUCHE(24) },   // le fa juste en dessous, un peu a gauche
-  { KEY_SELECT, FM1_TOUCHE(23) },   // SELECT a droite : le mi, juste a gauche du B
+  { KEY_B,      FM1_TOUCHE(23) },   // ... et le mi tout a droite, juste a sa gauche
   { KEY_SELECT, FM1_TOUCHE(6)  },   // SELECT a gauche : le si, juste a droite de la touche Droite
   { KEY_SELECT, FM1_TOUCHE(7)  },   // ... et le do, juste a sa droite
-  { KEY_SELECT, FM1_TOUCHE(21) },   // ... et le re, juste a gauche du SELECT de droite
+  { KEY_SELECT, FM1_TOUCHE(21) },   // SELECT a droite : le re, juste a gauche des B
   { KEY_START,  FM1_B_PLAY     },   // PLAY
   { KEY_START,  FM1_TOUCHE(22) },   // ... et le re# (POLY), juste en haut a gauche du SELECT de droite
   { KEY_L,      FM1_AUCUNE     },
