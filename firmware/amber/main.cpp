@@ -1546,7 +1546,7 @@ int main(void) {
   // Les rangees de la page, dans l'ordre d'AdLib Tracker 2. Une rangee « par
   // operateur » a deux valeurs, MOD puis CAR (octet + 1 pour la porteuse).
   enum { AFF_HEX, AFF_SORTIE, AFF_KSL, AFF_ONOFF, AFF_ONDE, AFF_MULT,
-         AFF_CONN, AFF_PAN, AFF_FTUNE, AFF_TABLE, AFF_TYPE, AFF_INV, AFF_PERC };
+         AFF_CONN, AFF_PAN, AFF_FTUNE, AFF_TABLE, AFF_TYPE, AFF_INV, AFF_PERC, AFF_DRUM };
 #ifdef FM1
   // FM-1 : F = le MAXIMUM. La puce compte a l'envers pour ces quatre-la (un
   // « rate » F est le plus rapide, donc la duree la plus courte ; un niveau de
@@ -1575,12 +1575,14 @@ int main(void) {
     { "FEEDBACK",        false, MD_OPL_FB_CONN, 1, 7,  AFF_HEX },
     { "F-TUNE",          false, 0,              0, 0,  AFF_FTUNE },
     { "FREQ MULTIPLIER", true,  MD_OPL_FLAGS_M, 0, 15, AFF_MULT },
-    { "PERC",            false, 0,              0, 0,  AFF_PERC },    // MELO, ou un son de batterie de la puce
+    { "TYPE",            false, 0,              0, 0,  AFF_PERC },    // MELO ou PERC (le mode percussion de la puce)
+    { "DRUM",            false, 0,              0, 0,  AFF_DRUM },    // PERC : le son, BD SD TT CY HH
     { "TABLE",           false, 0,              0, 0,  AFF_TABLE },
   };
   static const int kOplRangees = (int)(sizeof(kChampsOp) / sizeof(kChampsOp[0]));
   static const int kOplRangeeTable = kOplRangees - 1;
-  static const int kOplRangeePerc = kOplRangees - 2;   // (PERC, juste avant TABLE)
+  static const int kOplRangeePerc = kOplRangees - 3;   // (TYPE MELO / PERC, puis DRUM, juste avant TABLE)
+  static const int kOplRangeeDrum = kOplRangees - 2;
   static const char *kPercNom[6] = { "MELO", "BD", "SD", "TT", "CY", "HH" };
   // KEY SCALING : AT2 les propose dans l'ordre Default, 1.5, 3.0, 6.0 dB ;
   // la puce les code 0, 2, 1, 3.
@@ -1593,7 +1595,7 @@ int main(void) {
   // au plus, pour que MOD et CAR tiennent tous les deux dans l'ecran.
   static const char *kNomCourt[] = { "TYPE", "ATK", "DEC", "SUS", "REL", "OUT", "KSL",
                                      "CONN", "PAN", "TREM", "VIB", "KSR", "EGT", "WAVE",
-                                     "FB", "FINE", "MULT", "PERC", "TBL" };
+                                     "FB", "FINE", "MULT", "TYPE", "DRUM", "TBL" };
   static_assert(sizeof(kNomCourt) / sizeof(kNomCourt[0]) == sizeof(kChampsOp) / sizeof(kChampsOp[0]),
                 "un intitule court par rangee");
   static const char *kKslCourt[4]  = { "DEF", "3.0", "1.5", "6.0" };
@@ -1625,6 +1627,8 @@ int main(void) {
   struct ElInstr { int genre, champ, opt, lig, col; };   // (des int : un octet signe lu ainsi, l'emulateur en ligne ne le connait pas)
   static const int kInPages = 4;
   static const char *kInPageNom[kInPages] = { "ENV", "WAVE", "MULT", "CONN" };
+  static const int *pInstrPage = nullptr;      // (l'instrument de la page INSTR : instrId, declare plus bas)
+  auto percPage = [&]() { return pInstrPage ? md_replayer_get_instr_perc(*pInstrPage) : 0; };
   auto elementsInstr = [&](int pg, ElInstr *e) {
     int n = 0;
     auto ajoute = [&](int genre, int champ, int opt, int lig, int col) {
@@ -1640,7 +1644,10 @@ int main(void) {
       // les listes deviennent une valeur (A + gauche / droite).
       const bool c4 = zoomNiv == 1;
       int lig = 1;
-      if (pg == 0) ajoute(EL_VAL, kOplRangeePerc, 0, lig++, 0);              // PERC, tout en haut
+      if (pg == 0) {                                                          // TYPE (MELO / PERC), tout en haut ;
+        ajoute(EL_VAL, kOplRangeePerc, 0, lig++, 0);                          // DRUM dessous, en PERC
+        if (percPage()) ajoute(EL_VAL, kOplRangeeDrum, 0, lig++, 0);
+      }
       ajoute(EL_OP, -1, 0, lig++, 0);
       switch (pg) {
         case 0: for (int r = 0; r < 5; r++) ajoute(EL_VAL, 1 + r, 0, lig++, 0); break;   // ATK .. OUT
@@ -1666,10 +1673,14 @@ int main(void) {
       }
       return n;
     }
-    if (pg == 0) ajoute(EL_VAL, kOplRangeePerc, 0, 1, 0);                    // PERC, tout en haut ; OP dessous
-    ajoute(EL_OP, -1, 0, pg == 0 ? 2 : 1, 0);
+    const int dPerc = percPage() ? 1 : 0;                                   // (la ligne DRUM, en PERC)
+    if (pg == 0) {                                                            // TYPE (MELO / PERC), tout en haut ;
+      ajoute(EL_VAL, kOplRangeePerc, 0, 1, 0);                                // DRUM dessous, en PERC ; puis OP
+      if (dPerc) ajoute(EL_VAL, kOplRangeeDrum, 0, 2, 0);
+    }
+    ajoute(EL_OP, -1, 0, pg == 0 ? 2 + dPerc : 1, 0);
     switch (pg) {
-      case 0: for (int r = 0; r < 5; r++) ajoute(EL_VAL, 1 + r, 0, 3 + r, 0); break;   // ATK .. OUT
+      case 0: for (int r = 0; r < 5; r++) ajoute(EL_VAL, 1 + r, 0, 4 + dPerc + r, 0); break;   // ATK .. OUT
       case 1:
         for (int k = 0; k < 8; k++) ajoute(EL_OPT, 13, k, 4 + k, 0);                  // WAVEFORM
         ajoute(EL_VAL, 14, 0, 13, 0);                                                  // FEEDBACK
@@ -1702,6 +1713,21 @@ int main(void) {
     for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(ins, o, FM1_PRESET_FM[k][o]);
     md_replayer_set_instr_gen_val(ins, MD_GEN_PROP_PANNING, 128);
     md_replayer_set_instr_name(ins, FM1_PRESET_NOMS[k]);
+  };
+  // PERC : le son de batterie choisi (1 BD .. 5 HH) charge son preset d'AdLib Tracker II, retouchable ensuite. Sur
+  // la puce, la grosse caisse est une voix FM a deux operateurs (un son melodique y sonne... melodique), les autres
+  // un seul operateur : la PORTEUSE de l'instrument (compat/fm1_voix.c). TT et HH sont des modulateurs sur la puce :
+  // leur preset est ecrit la, on le recopie dans la porteuse.
+  auto chargeBatterie = [&](int ins, int t) {
+    static const char *kNom[5] = { "BDRUM", "SNARE", "TOMTOM", "CYMBAL", "HIHAT" };
+    if (t < 1 || t > 5) return;
+    for (int k = 0; k < FM1_NB_PRESETS; k++)
+      if (!strcmp(FM1_PRESET_NOMS[k], kNom[t - 1])) {
+        appliquePreset(ins, k);
+        if (t == 3 || t == 5)                       // (TT, HH : le modulateur du preset, dans la porteuse)
+          for (int o = 0; o < 10; o += 2) md_replayer_set_instr_opl(ins, o + 1, md_replayer_get_instr_opl(ins, o));
+        return;
+      }
   };
   // DRUM KEYBOARD (GLO, troisieme mode) : chaque touche du clavier, un son de batterie a elle, pris dans les
   // presets (AdLib Tracker II : de vraies batteries) : en bas les grosses caisses, puis les caisses claires, les
@@ -1821,6 +1847,7 @@ int main(void) {
   // l'iPad. On ne les recalcule pas depuis le curseur : sinon la page CHAIN
   // afficherait toujours le chain de la case actuellement pointee dans SONG.
   int chainId = 0, phraseId = 0, instrId = 1;
+  pInstrPage = &instrId;
   int chLigne = 0, chCol = 0;      // CHAIN : 16 lignes, 2 colonnes (phrase, tsp)
   int phLigne = 0, phCol = 0;      // PHRASE : 16 lignes, 6 colonnes
   int inLigne = 0, inCol = 0;      // INSTR : parametres en lignes, 4 operateurs
@@ -4774,10 +4801,18 @@ int main(void) {
                 if (sens > 0) { md_replayer_set_instr_kind(ins, MD_INSTR_KIND_PCM);
                                 inLigne = 0; inCol = 0; }
                 break;
-              case AFF_PERC:          // MELO, BD, SD, TT, CY, HH
-                md_replayer_set_instr_perc(ins, borne(md_replayer_get_instr_perc(ins) + sens, 0, 5));
+              case AFF_PERC: {        // TYPE : MELO ou PERC (une grosse caisse pour commencer, et son son)
+                const int avant = md_replayer_get_instr_perc(ins);
+                if (sens > 0 && !avant) { md_replayer_set_instr_perc(ins, 1); chargeBatterie(ins, 1); }
+                else if (sens < 0) md_replayer_set_instr_perc(ins, 0);
                 modifie = true;
-                break;
+              } break;
+              case AFF_DRUM: {        // le son de batterie : BD, SD, TT, CY, HH (et son son)
+                const int avant = md_replayer_get_instr_perc(ins);
+                const int t = avant ? borne(avant + sens, 1, 5) : 0;
+                if (t && t != avant) { md_replayer_set_instr_perc(ins, t); chargeBatterie(ins, t); }
+                modifie = true;
+              } break;
               case AFF_PAN: {         // L, C ou R, rien d'autre
                 const int p = md_replayer_get_instr_gen_val(ins, MD_GEN_PROP_PANNING);
                 const int idx = borne((p < 85 ? 0 : p > 170 ? 2 : 1) + sens, 0, 2);
@@ -7308,7 +7343,8 @@ int main(void) {
         // Les titres et les espaces de chaque page (sans ZOOM : en ZOOM, la page
         // tient dans l'ecran sans eux).
         if (!z) switch (inPage) {
-          case 0: fm1_rangee_espace(2); if (!z) fm1_rangee_espace(8); break;
+          case 0: { const int d = md_replayer_get_instr_perc(ins) ? 1 : 0;   // (TYPE, DRUM en PERC, OP, puis l'enveloppe)
+                    fm1_rangee_espace(3 + d); fm1_rangee_espace(9 + d); } break;
           case 1: fm1_rangee_espace(2); titre(0, 3, "WAVEFORM", kTitre); fm1_rangee_espace(12); break;
           case 2: fm1_rangee_espace(2); titre(0, 3, z ? "MULT" : "FREQ MULTIPLIER", kTitre);
                   fm1_rangee_espace(zoomNiv == 2 ? 20 : 12);
@@ -7366,7 +7402,8 @@ int main(void) {
             case AFF_FTUNE: { const int ft = (fineT + 128) & 255;
                               d[0] = kHex[ft >> 4]; d[1] = kHex[ft & 15]; d[2] = 0; bv = ft; bmax = 255; } break;
             case AFF_TABLE:  texteTable(ins, d); break;
-            case AFF_PERC:   strcpy(d, kPercNom[md_replayer_get_instr_perc(ins) % 6]); break;
+            case AFF_PERC:   strcpy(d, md_replayer_get_instr_perc(ins) ? "PERC" : "MELO"); break;
+            case AFF_DRUM:   strcpy(d, kPercNom[md_replayer_get_instr_perc(ins) % 6]); break;
           }
           titre(0, e.lig, nomChamp(e.champ), kTitre);
           int cv = 0, cb = -1, nb = 0;               // la colonne de la valeur ; la barre
@@ -7376,6 +7413,7 @@ int main(void) {
           else if (inPage == 1) { cv = 9; cb = 11; nb = 9; }
           else if (inPage == 3) { cv = 11; if (ch.aff == AFF_FTUNE) { cb = 14; nb = 7; } }
           else cv = 6;
+          if (ch.aff == AFF_PERC || ch.aff == AFF_DRUM) { cv = z ? 5 : 6; cb = -1; }   // (pres du nom : la vue ne glisse pas)
           texte(cv, e.lig, d, coul);
           if (cb >= 0 && bv >= 0) barre(cb, e.lig, nb, bv, bmax);
           if (ch.aff == AFF_CONN)                    // le schema : 1 module 2, ou les deux s'ajoutent
@@ -7388,7 +7426,7 @@ int main(void) {
           const int a = 15 - oplLit(ins, MD_OPL_AD_M + inOp, 4, 15), dd = 15 - oplLit(ins, MD_OPL_AD_M + inOp, 0, 15);
           const int sl = 15 - oplLit(ins, MD_OPL_SR_M + inOp, 4, 15), rr = 15 - oplLit(ins, MD_OPL_SR_M + inOp, 0, 15);
           const bool tient = oplLit(ins, MD_OPL_FLAGS_M + inOp, 5, 1) != 0;
-          const int x0 = 0, y0 = 9 * MD_CELL_H, w = 20 * MD_CELL_W, h = 6 * MD_CELL_H - 1;
+          const int x0 = 0, y0 = (10 + (md_replayer_get_instr_perc(ins) ? 1 : 0)) * MD_CELL_H, w = 20 * MD_CELL_W, h = 6 * MD_CELL_H - 1;
           const int la = 1 + a * 3, ld = 1 + dd * 3, lr = 1 + rr * 3;
           const int lsus = w - la - ld - lr > 6 ? w - la - ld - lr : 6;
           for (int x = 0; x < w; x++) {
@@ -7473,7 +7511,7 @@ int main(void) {
           // FM-1 : pas de ligne TYPE (pas d'echantillons sur le FM-1), et pas
           // de ligne vide : tout tient dans l'image (TABLE tombait sur la
           // rangee 21, hors de l'image), la vue suit le curseur vers le bas.
-          if (ch.aff == AFF_TYPE || ch.aff == AFF_PERC) continue;
+          if (ch.aff == AFF_TYPE || ch.aff == AFF_PERC || ch.aff == AFF_DRUM) continue;
           // Des espaces entre les parties : l'enveloppe, les niveaux et la
           // voie, les drapeaux, puis l'onde, l'accord et la table.
           const int lig = r + (r >= 5) + (r >= 9) + (r >= 13);
