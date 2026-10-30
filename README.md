@@ -23,7 +23,7 @@ A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum mac
 <img src="docs/media/circuit-bending-dancer.png" width="240" alt="CIRCUIT BENDING page with the dancer animation">
 <img src="docs/media/tracker-song.png" width="240" alt="The tracker: the SONG page">
 <img src="docs/media/tracker-phrase.png" width="240" alt="The tracker: a phrase with notes">
-<img src="docs/media/dpad-keyboard.png" width="240" alt="The D-PAD mode: what each key does">
+<img src="docs/media/dpad-keys.png" width="240" alt="The D-PAD mode: what each key does">
 <img src="docs/media/drum-machine.png" width="240" alt="The drum machine">
 </p>
 
