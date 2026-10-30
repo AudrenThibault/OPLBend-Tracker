@@ -4577,6 +4577,11 @@ void md_replayer_play_from(int song_row) {
     // VEL ne s'entendait donc pas à l'arrêt, ni en MIDI (la vélocité de la
     // note-on en découle) ni sur un échantillon. On la pose ici, exactement
     // comme le séquenceur le fait au passage d'une ligne.
+    static int16_t md_pan_impose[MD_TOTAL_VOICES];   // (le pan + 1 ; 0 : celui de l'instrument)
+    void md_replayer_impose_pan(int channel, int pan) {
+      if (channel >= 0 && channel < MD_TOTAL_VOICES)
+        md_pan_impose[channel] = (int16_t)(pan < 0 ? 0 : (pan > 255 ? 255 : pan) + 1);
+    }
     void md_replayer_play_test_note_vel(int note, int instr, int channel,
                                         int vel) {
       if (!current_module || instr < 1 || instr > MD_MAX_INSTRUMENTS ||
@@ -4594,6 +4599,7 @@ void md_replayer_play_from(int song_row) {
       }
       ch_current_instr[channel] = instr;
       md_set_instrument((uint8_t)channel, &current_module->instruments[instr - 1]);
+      if (md_pan_impose[channel]) ch_panning[channel] = (uint8_t)(md_pan_impose[channel] - 1);
       md_play_note((uint8_t)channel, (uint8_t)note);
       ds_voix_envoie();
       md_unlock(&replayer_lock);

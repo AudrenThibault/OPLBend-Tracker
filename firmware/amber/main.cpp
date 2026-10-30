@@ -662,6 +662,12 @@ static inline int kRangeeTouche(int k) {
   return k == 8 ? 0 : k == 10 ? 1 : k == 13 ? 2 : k == 15 ? 3 : k == 17 ? 4 : k == 20 ? 5 : -1;
 }
 static volatile uint32_t g_loopVuL[6];
+// Les molettes de la page LOOPER, comme sur la page TRACKS de SLOOP (isod89, GPL-3.0) : KNOB 1 SWING (toute la
+// boucle : les pas impairs en retard, 0 droit a 100 = 75 / 25), KNOB 2 LEVEL, KNOB 3 STEPS, KNOB 4 PAN (de la couche
+// du curseur ; ALGORITHM la choisit, comme la croix)
+static volatile int g_loopSwing = 0;
+static volatile uint8_t g_loopNiv[6] = { 100, 100, 100, 100, 100, 100 };
+static volatile int8_t g_loopPan[6] = { 0, 0, 0, 0, 0, 0 };     // (-50 gauche, 0 centre, 50 droite)
 static volatile uint8_t g_loopRecale = 0;        // STEP, STP/CUR vient de changer : chaque rangee repart d'ou elle est
 static inline uint32_t loopLgLigne(int r) {       // la duree de la rangee r, en echantillons
   const uint32_t p = g_loopPasL[r];
@@ -702,9 +708,15 @@ static void loopAudio(void) {
       md_replayer_stop_test_note(kLoopVoie0 + r);
   }
   const int n = g_loopN;
+  const uint32_t u = g_loopUnite ? g_loopUnite : 1u, swing = (uint32_t)g_loopSwing * u / 200u;   // (SWING : en pas)
   for (int i = 0; i < n; i++) {
-    const uint32_t t = g_loop[i].t;
     const int rg = g_loop[i].couche % kLoopVoies;
+    uint32_t t = g_loop[i].t;
+    if (swing && (((t + u / 2u) / u) & 1u)) {     // (un pas impair : en retard, dans sa rangee)
+      t += swing;
+      const uint32_t lgR = loopLgLigne(rg);
+      if (t >= lgR) t -= lgR;
+    }
     const uint32_t p = pos[rg], a = avant[rg];
     if (p == a) continue;
     const bool dedans = a < p ? (t > a && t <= p) : (t > a || t <= p);   // (la boucle repart)
@@ -713,12 +725,19 @@ static void loopAudio(void) {
       // une batterie de DRUM KEYBOARD : un coup, sur les quatre voies de DRUM KEYBOARD tour a tour (plusieurs
       // batteries d'une meme couche sonnent ensemble, aucune ne coupe l'autre ; sa fin ne sert pas)
       static int dk = 0;
-      if (g_loop[i].on) { fm1_voie_forte(12 + dk); md_replayer_play_test_note(g_loop[i].note, g_loop[i].ins, 12 + dk); dk = (dk + 1) & 3; }
+      if (g_loop[i].on) {
+        fm1_voie_forte(12 + dk);
+        md_replayer_impose_pan(12 + dk, 128 + g_loopPan[rg] * 127 / 50);
+        md_replayer_play_test_note_vel(g_loop[i].note, g_loop[i].ins, 12 + dk, g_loopNiv[rg]);
+        dk = (dk + 1) & 3;
+      }
       continue;
     }
     const int voie = kLoopVoie0 + rg;
-    if (g_loop[i].on) md_replayer_play_test_note(g_loop[i].note, g_loop[i].ins, voie);
-    else md_replayer_stop_test_note(voie);
+    if (g_loop[i].on) {                           // (LEVEL, PAN de sa couche)
+      md_replayer_impose_pan(voie, 128 + g_loopPan[rg] * 127 / 50);
+      md_replayer_play_test_note_vel(g_loop[i].note, g_loop[i].ins, voie, g_loopNiv[rg]);
+    } else md_replayer_stop_test_note(voie);
   }
   for (int r = 0; r < 6; r++) g_loopVuL[r] = pos[r];
 }
@@ -777,6 +796,7 @@ static bool loopEnleveDerniere(void) {
   return false;
 }
 static void loopEfface(void) {
+  for (int r = 0; r < 6; r++) { g_loopNiv[r] = 100; g_loopPan[r] = 0; }   // (une boucle neuve : ses couches au neutre)
   g_loopEtat = 0;
   loopSilence();
   g_loopN = 0; g_loopCouche = 0; g_loopMuet = 0; g_loopOct = 0;
@@ -3282,6 +3302,26 @@ int main(void) {
         aucun = 1;
       }
       // LOOPER : SELECT (pas le tempo : la boucle a sa duree) change le preset du son du clavier
+      // LOOPER, comme la page TRACKS de SLOOP : KNOB 1 SWING, 2 LEVEL, 3 STEPS, 4 PAN (la couche du curseur) ;
+      // ALGORITHM deplace le curseur de couche en couche (comme la croix)
+      if (page == PAGE_LOOPER && (pas[0] || pas[1] || pas[2] || pas[3] || pas[5])) {
+        if (pas[5]) {
+          loopCurL = borne((loopCurL < kLoopVoies ? loopCurL : loopCibleL) + pas[5], 0, kLoopVoies - 1);
+          loopCibleL = loopCurL; loopLigneVue = loopCurL;
+        }
+        const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL;
+        char l1[16], l2[16];
+        siprintf(l1, "LAYER %d", c + 1); l2[0] = 0;
+        if (pas[0]) { g_loopSwing = borne(g_loopSwing + pas[0], 0, 100); strcpy(l1, "SWING"); siprintf(l2, "%d%%", g_loopSwing); }
+        if (pas[1]) { g_loopNiv[c] = (uint8_t)borne(g_loopNiv[c] + pas[1], 0, 127); siprintf(l2, "LEVEL %d", g_loopNiv[c]); }
+        if (pas[2]) { g_loopPasL[c] = (uint8_t)borne(g_loopPasL[c] + pas[2], 1, 64); g_loopRecale = 1; siprintf(l2, "STEPS %d", g_loopPasL[c]); }
+        if (pas[3]) { g_loopPan[c] = (int8_t)borne(g_loopPan[c] + pas[3], -50, 50); siprintf(l2, "PAN %d", g_loopPan[c]); }
+        if (l2[0]) fm1_annonce2(l1, l2);
+        pas[0] = pas[1] = pas[2] = pas[3] = pas[5] = 0;
+        aucun = 1;
+        for (int k = 0; k < 7; k++) if (pas[k]) aucun = 0;
+        modifie = true;
+      }
       if (page == PAGE_LOOPER && pas[6]) {
         static int loopPreset = 0;
         const int ins = instrCible();
@@ -6859,6 +6899,8 @@ int main(void) {
         for (int j = 0; j < 16; j++) som = som * 31u + (grille[c][j] ? note[c][j] : 0u);
       static int vuPj = -2, vuCur = -2, vuL = -1, vuZm = -1; static uint32_t vuSom = 1;
       som = som * 7u + (uint32_t)loopLigneVue;
+      som = som * 131u + (uint32_t)g_loopSwing * 7u + (uint32_t)loopCibleL;   // (les molettes : on redessine)
+      for (int r = 0; r < 6; r++) som = som * 31u + g_loopNiv[r] * 3u + (uint32_t)(g_loopPan[r] + 50) + g_loopPasL[r] * 977u;
       if (ecranEfface || pj != vuPj || cur != vuCur || loopCurL != vuL || som != vuSom || zoomNiv != vuZm) {
         vuPj = pj; vuCur = cur; vuL = loopCurL; vuSom = som; vuZm = zoomNiv;
         const int sauve = g_colOrigine; g_colOrigine = 0;
@@ -6871,7 +6913,7 @@ int main(void) {
           }
           efface(fm1_entete_cellules() - 8, 0, 8);
           if (rp[0]) texte(COL_REPERE(rp), 0, rp, kEntete); }
-        titre(0, 1, "LOOPER", kTitre);
+        // (pas de grand titre : LOOPER est dans l'en-tete ; la place va aux molettes, en bas)
         fm1_rangee_espace(2);
         if (g_loopEtat == 0 || g_loopEtat == 1 || g_loopEtat == 5) {   // pas encore de boucle : ce qu'il faut faire
           titre(0, 5, g_loopEtat == 1 ? "RECORDING" : g_loopEtat == 5 ? "GET READY" : "PRESS REC",
@@ -6905,14 +6947,37 @@ int main(void) {
           const int c2 = zoomNiv ? 4 : 8, rv = loopLigneVue;
           const bool ici = cur >= 0 && loopCurL >= kLoopVoies;
           fm1_rangee_espace(3 + kLoopVoies);
-          fm1_rangee_normale(4 + kLoopVoies);
-          fm1_rangee_normale(5 + kLoopVoies);
+          fm1_rangee_petite(4 + kLoopVoies);            // (les boutons en petit : la place des molettes)
+          fm1_rangee_petite(5 + kLoopVoies);
           texte(0, 4 + kLoopVoies, zoomNiv ? "RM" : "RM LAST", ici && loopCurL == kLoopVoies && !g_loopBtnC ? kAccent : kData);
           texte(0, 5 + kLoopVoies, zoomNiv ? "CLR" : "CLR ALL", ici && loopCurL == kLoopVoies + 1 && !g_loopBtnC ? kAccent : kData);
           siprintf(t, zoomNiv ? "STEP:%d" : "STEP: %d", g_loopPasG);
           texte(c2, 4 + kLoopVoies, t, ici && loopCurL == kLoopVoies && g_loopBtnC ? kAccent : kData);
           siprintf(t, zoomNiv ? "STP/CUR:%d" : "STP/CUR: %d", g_loopPasL[rv]);
           texte(c2, 5 + kLoopVoies, t, ici && loopCurL == kLoopVoies + 1 && g_loopBtnC ? kAccent : kData);
+          // Les quatre molettes, comme en bas de la page TRACKS de SLOOP : un cadran (sa couleur, l'aiguille a la
+          // valeur), son nom, sa valeur ; SWING de toute la boucle, LEVEL STEPS PAN de la couche du curseur
+          { const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL, l0 = 6 + kLoopVoies;
+            const int pasCol = zoomNiv ? 4 : 5;
+            static const char *kNom[4] = { "SWG", "LVL", "STP", "PAN" };
+            const int val[4] = { g_loopSwing, g_loopNiv[c], g_loopPasL[c], g_loopPan[c] };
+            const int lo[4] = { 0, 0, 1, -50 }, hi[4] = { 100, 127, 64, 50 };
+            // (un cercle de rayon 3 : ses 16 points, du bas a gauche, dans le sens des aiguilles d'une montre)
+            static const int8_t kCx[16] = { -2, -3, -3, -3, -2, -1, 0, 1, 2, 3, 3, 3, 2, 1, 0, -1 };
+            static const int8_t kCy[16] = { 2, 1, 0, -1, -2, -3, -3, -3, -2, -1, 0, 1, 2, 3, 3, 3 };
+            fm1_rangee_petite(l0); fm1_rangee_petite(l0 + 1); fm1_rangee_petite(l0 + 2);
+            for (int k = 0; k < 4; k++) {
+              const int col = k * pasCol, x0 = col * MD_CELL_W + 8, y0 = l0 * MD_CELL_H + 3;
+              const u16 cc = kEffet[k];                // (les couleurs des molettes, les memes partout)
+              const int idx = (val[k] - lo[k]) * 12 / (hi[k] - lo[k]);   // (0 .. 12 : le long de l'arc)
+              for (int p = 0; p < 13; p++) pixel(x0 + kCx[p], y0 + kCy[p], p <= idx ? cc : kVide);
+              for (int r = 0; r <= 2; r++) pixel(x0 + kCx[idx] * r / 3, y0 + kCy[idx] * r / 3, kData);   // (l'aiguille)
+              char v[8];
+              if (k == 0) siprintf(v, "%d%%", val[0]); else siprintf(v, "%d", val[k]);
+              texte(col, l0 + 1, kNom[k], cc);
+              texte(col, l0 + 2, v, kData);
+            }
+          }
         }
         g_colOrigine = sauve;
       }
@@ -6933,7 +6998,7 @@ int main(void) {
         { "GLO > KEYBOARD", "normal keyboard\n\nPRESETS: change track" },
         { "GLO > DRUM KEYBOARD", "a drum on each key\n\nOCT-/OCT+: octave" },
         { "SEQ > DRUM MACHINE", "BLACK KEYS: sound\nWHITE KEYS: steps\nPLAY: start/stop\nOCT-/OCT+: octave\n\nin the tracker:\nREC: copy pattern" },
-        { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nSELECT: preset\nOCT-/OCT+: loop octave" },
+        { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nK1: swing  K2: level\nK3: steps  K4: pan\n(the cursor's layer)\nALGORITHM: layer\nSELECT: preset\nOCT-/OCT+: loop octave" },
         { "D-PAD > LOOPER", "ARROWS: move\nA: set/unset a note\nA+LEFT/RIGHT: note -1/+1\nA+UP/DOWN: octave -/+\n\non a layer number:\nA+B: remove the layer\nA: put it back\n\nRM LAST, CLR ALL: A\nSTEP: A+LEFT/RIGHT\n(all the loop)\nSTP/CUR: A+LEFT/RIGHT\n(the cursor's layer ; there,\nOP4..MONO keys pick it)" },
         { "HOME > SONG", "one chain per row\n\nSEL+RIGHT: chain\nSEL+UP: project\nSEL+DOWN: drums" },
         { "SONG > CHAIN", "phrases + transpose\n\nSEL+RIGHT: phrase\nSEL+LEFT: song" },

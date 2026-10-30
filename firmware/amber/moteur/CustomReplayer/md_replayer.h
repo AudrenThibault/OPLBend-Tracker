@@ -925,6 +925,8 @@ void md_replayer_play_test_note(int note, int instr, int channel);
 // La même, avec la force de la ligne (0-127, -1 = ne pas y toucher) : en MIDI
 // elle devient la vélocité de la note-on.
 void md_replayer_play_test_note_vel(int note, int instr, int channel, int vel);
+// Le panoramique impose aux notes d'essai de cette voie (le LOOPER : PAN de chaque couche) ; -1 : celui de l'instrument.
+void md_replayer_impose_pan(int channel, int pan);
 void md_replayer_stop_test_note(int channel);
 void md_replayer_set_test_arpeggio(int channel, int val);
 void md_replayer_prepare_test_channel(int instr);
