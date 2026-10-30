@@ -1058,6 +1058,8 @@ int main(void) {
     fm1_horloge_vitesse((uint32_t)(65536.0 * deuxPuiss(bendHorloge / 1200.0) + 0.5));
   };
   int loopCurL = 0, loopCurC = 1, loopDerNote = 49;
+  // (la boucle arretee : REC n'agit qu'au relache, comme SLOOP ; tenu deux secondes, il efface sans relancer)
+  static bool recArretAttend = false;
   int loopRecAvant = 0;
   int loopLigneVue = 0;                               // LOOPER : la derniere rangee du curseur (STP/CUR la regle)
   int loopCibleL = 0;                                 // ... celle que les molettes reglent : la derniere enregistree,
@@ -3993,21 +3995,29 @@ int main(void) {
         if (fm1_looper() && tenu && maintenant - tenuDepuis > 2u * sec && g_loopEtat != 0) {
           if (!efface) {
             efface = true;
+            recArretAttend = false;                  // (rien ne repart)
             loopEfface();
             fm1_annonce2("LOOPER", "CLEARED");
             modifie = true;
           }
         } else if (!tenu) efface = false;
+        if (recArretAttend && !tenu) {               // relache avant deux secondes : elle repart, une couche de plus
+          recArretAttend = false;
+          if (g_loopEtat == 4) {
+            g_loopT0 = maintenant; loopRepart(); g_loopCouche++; g_loopEtat = 3;
+            g_loopDebutPrise = g_loopN;
+            loopCibleL = g_loopCouche % kLoopVoies;
+            fm1_annonce2("LOOPER", "OVERDUB");
+            modifie = true;
+          }
+        }
       }
       const int recAppuis = fm1_rec_appuis();
       if (recAppuis && fm1_looper() && !recEtat) {  // LOOPER : REC, comme la pedale
         const uint32_t maintenant = fm1_echantillons();
         loopRecAvant = g_loopEtat;                 // (REC tenu : il efface, plus haut ; et defait cet appui)
-        if (g_loopEtat == 4) {                     // arretee : elle repart, et on ajoute une couche
-          g_loopT0 = maintenant; loopRepart(); g_loopCouche++; g_loopEtat = 3;
-          g_loopDebutPrise = g_loopN;
-          loopCibleL = g_loopCouche % kLoopVoies;      // (les molettes : ce qu'on enregistre)
-          fm1_annonce2("LOOPER", "OVERDUB");
+        if (g_loopEtat == 4) {                     // arretee : elle repartira au relache (plus haut) ; tenu, il efface
+          recArretAttend = true;
         } else if (g_loopEtat == 0) {              // vide : REC arme, la prise part de la premiere note (comme SLOOP)
           loopSilence();
           g_loopN = 0; g_loopCouche = 0; g_loopMuet = 0; g_loopOct = 0; g_loopT0 = maintenant; g_loopEtat = 1;
