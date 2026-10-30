@@ -1,0 +1,160 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPLBend Tracker — OPL3 tracker firmware for the M-VAVE FM-1</title>
+<meta name="description" content="OPLBend Tracker: a free LSDJ-style OPL3 FM tracker firmware for the M-VAVE FM-1, with FX inspired by circuit bending, a drum machine and a looper. Install it from your browser. Reads and writes AdLib Tracker II .A2M songs.">
+<link rel="canonical" href="https://audrenthibault.github.io/OPLBend-Tracker/">
+<meta name="keywords" content="M-VAVE FM-1, FM-1 custom firmware, OPL3 tracker, YMF262, FM synthesis, chiptune, LSDJ, AdLib Tracker II, A2M, circuit bending, looper, drum machine">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://audrenthibault.github.io/OPLBend-Tracker/">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "OPLBend Tracker",
+ "applicationCategory": "MultimediaApplication", "operatingSystem": "M-VAVE FM-1 firmware",
+ "description": "A free OPL3 FM tracker firmware for the M-VAVE FM-1, with FX inspired by circuit bending, a drum machine and a looper. Reads and writes AdLib Tracker II .A2M songs.",
+ "url": "https://audrenthibault.github.io/OPLBend-Tracker/", "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+ "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
+ "author": {"@type": "Person", "name": "Audren", "url": "https://github.com/AudrenThibault"},
+ "codeRepository": "https://github.com/AudrenThibault/OPLBend-Tracker"}
+</script>
+<meta property="og:title" content="OPLBend Tracker">
+<meta property="og:description" content="A free OPL3 FM tracker firmware for the M-VAVE FM-1, with FX inspired by circuit bending, a drum machine and a looper.">
+<style>
+  :root { --bg: #fbf3f8; --fg: #24082f; --dim: #7a5a80; --accent: #d8152b; --card: #f3e3ee; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #080010; --fg: #f5cfe6; --dim: #a98ab0; --accent: #ff3048; --card: #160a1e; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 40px 16px 60px; }
+  h1 { font-size: 30px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 36px 0 10px; }
+  a { color: inherit; }
+  .sub { color: var(--dim); margin: 0 0 24px; }
+  .lang { float: right; font-size: 13px; cursor: pointer; text-decoration: underline; background: none; border: 0; padding: 0; color: var(--dim); }
+  .btns a { display: inline-block; margin: 0 8px 8px 0; padding: 8px 18px; text-decoration: none; border: 1px solid var(--fg); }
+  .btns a.main { background: var(--fg); color: var(--bg); }
+  .warn { border-left: 3px solid var(--accent); padding-left: 12px; }
+  .card { background: var(--card); padding: 12px 16px; margin: 10px 0; }
+  .small { color: var(--dim); font-size: 13px; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .shots img { width: 100%; height: auto; image-rendering: pixelated; display: block; }
+  ul { padding-left: 20px; } li { margin: 4px 0; }
+  [lang="fr"] .en, [lang="en"] .fr { display: none; }
+</style>
+</head>
+<body>
+<main>
+<button class="lang" id="lang">Français</button>
+<h1>OPLBend Tracker</h1>
+<p class="sub"><span class="en">A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum machine and a looper, for the M-VAVE FM-1.</span><span class="fr">Un firmware tracker FM OPL3 gratuit, avec des effets inspirés du circuit bending, une boîte à rythmes et un looper, pour le M-VAVE FM-1.</span></p>
+
+<p class="btns">
+  <a class="main" href="installer/"><span class="en">Install from the browser</span><span class="fr">Installer depuis le navigateur</span></a>
+  <a href="transfer/"><span class="en">Send songs</span><span class="fr">Envoyer des morceaux</span></a>
+  <a href="firmware/" ><span class="en">Download (.fwsc)</span><span class="fr">Télécharger (.fwsc)</span></a>
+  <a href="https://github.com/AudrenThibault/OPLBend-Tracker">GitHub</a>
+  <a href="https://ko-fi.com/audren" target="_blank" rel="noopener">♥ Donate</a>
+</p>
+
+<h2 id="demo"><span class="en">Demo</span><span class="fr">Démo</span></h2>
+<video controls preload="none" playsinline poster="media/demo-poster.jpg" style="width:100%;height:auto;background:#000"><source src="media/demo.mp4" type="video/mp4"></video>
+
+<h2><span class="en">Screenshots</span><span class="fr">Captures d'écran</span></h2>
+<div class="shots">
+  <img src="media/circuit-bending-cat.png" alt="CIRCUIT BENDING page with the cat animation" loading="lazy">
+  <img src="media/circuit-bending-dancer.png" alt="CIRCUIT BENDING page with the dancer animation" loading="lazy">
+  <img src="media/tracker-song.png" alt="The tracker: the SONG page" loading="lazy">
+  <img src="media/tracker-phrase.png" alt="The tracker: a phrase with notes" loading="lazy">
+  <img src="media/dpad-keyboard.png" alt="The D-PAD mode: what each key does" loading="lazy">
+  <img src="media/drum-machine.png" alt="The drum machine" loading="lazy">
+</div>
+
+<h2><span class="en">What it is</span><span class="fr">Ce que c'est</span></h2>
+<ul class="en">
+  <li>An LSDJ-style tracker: SONG, CHAIN, PHRASE, INSTR, TABLE, PROJECT — driven from the FM-1's keyboard and knobs.</li>
+  <li>A software OPL3 (YMF262) FM engine, 18 voices, with 2,103 instrument presets from AdLib Tracker II.</li>
+  <li>FX inspired by circuit bending: virtual switches on the FM chip, track by track, and a chip clock you can bend (pitch and speed, like a slowed-down tape).</li>
+  <li>GLITCH, MASTER FX (distortion, ring mod, phaser, flanger, delay, crush, filter) and KNOB GENERAL on all sounds at once.</li>
+  <li>A drum machine, a drum keyboard (a drum on every key) and a looper with layers and polymeter.</li>
+  <li>Opens and exports AdLib Tracker II <b>.A2M</b> songs, which also open in AMBER OPL Tracker and my other OPL3 trackers. USB audio: record it straight into your DAW.</li>
+  <li>Help on the device: press ENV.</li>
+</ul>
+<ul class="fr">
+  <li>Un tracker façon LSDJ : SONG, CHAIN, PHRASE, INSTR, TABLE, PROJECT — piloté avec le clavier et les molettes du FM-1.</li>
+  <li>Un moteur FM OPL3 (YMF262) logiciel, 18 voix, avec les 2 103 presets d'instruments d'AdLib Tracker II.</li>
+  <li>Des effets inspirés du circuit bending : des interrupteurs virtuels sur la puce FM, piste par piste, et l'horloge de la puce qu'on peut tordre (hauteur et vitesse, comme une cassette ralentie).</li>
+  <li>GLITCH, MASTER FX (distorsion, ring mod, phaser, flanger, delay, crush, filtre) et KNOB GENERAL sur tous les sons à la fois.</li>
+  <li>Une boîte à rythmes, un clavier de batterie (un son de batterie par touche) et un looper avec couches et polymétrie.</li>
+  <li>Ouvre et exporte les morceaux <b>.A2M</b> d'AdLib Tracker II, qui s'ouvrent aussi dans AMBER OPL Tracker et mes autres trackers OPL3. Audio USB : enregistre-le directement dans ton logiciel.</li>
+  <li>L'aide sur l'appareil : appuie sur ENV.</li>
+</ul>
+
+<h2><span class="en">Help</span><span class="fr">Aide</span></h2>
+<p class="en">It works like LSDJ, M8 Tracker or Little Piggy Tracker. <b>First press GLO to switch to D-PAD mode</b>: the keys become arrows, A, B and SELECT, and the shortcuts below work. Press <b>ENV</b> for the help on the device.</p>
+<p class="fr">Il s'utilise comme LSDJ, M8 Tracker ou Little Piggy Tracker. <b>Appuie d'abord sur GLO pour passer en mode D-PAD</b> : les touches deviennent croix, A, B et SELECT, et les raccourcis ci-dessous marchent. Appuie sur <b>ENV</b> pour l'aide sur l'appareil.</p>
+<ul class="en">
+  <li>SEL+UP: project · SEL+RIGHT / SEL+LEFT: song → chain → phrase → instrument → table · SEL+DOWN: drum machine</li>
+  <li>A: insert · A, A: insert a new one · A+LEFT/RIGHT: value ±1 · A+UP/DOWN: value ±16 · A+B: delete</li>
+  <li>SEL+B: select · B: copy · SEL+A: paste · SEL+B+A: deep clone · PLAY: play/stop</li>
+</ul>
+<ul class="fr">
+  <li>SEL+HAUT : project · SEL+DROITE / SEL+GAUCHE : song → chain → phrase → instrument → table · SEL+BAS : boîte à rythmes</li>
+  <li>A : insérer · A, A : en insérer un nouveau · A+GAUCHE/DROITE : valeur ±1 · A+HAUT/BAS : valeur ±16 · A+B : effacer</li>
+  <li>SEL+B : sélectionner · B : copier · SEL+A : coller · SEL+B+A : clone profond · PLAY : lecture/arrêt</li>
+</ul>
+
+<h2><span class="en">Install</span><span class="fr">Installer</span></h2>
+<p class="warn"><span class="en"><b>We recommend running the official firmware V15 on your FM-1 first.</b> M-VAVE now ships V16, but FM-1 custom firmwares are generally installed over V15, and we cannot be sure that installing over V16 works: if yours has another version, the safest is to install the official V15 from <a href="https://www.m-vave.com/download" target="_blank" rel="noopener">M-VAVE Downloads</a> first.</span><span class="fr"><b>Nous conseillons d'abord d'installer le firmware officiel V15 sur ton FM-1.</b> M-VAVE propose maintenant la V16, mais les firmwares custom du FM-1 s'installent en général sur la V15, et nous ne pouvons pas garantir que l'installation marche depuis la V16 : si le tien a une autre version, le plus prudent est d'installer d'abord la V15 officielle depuis <a href="https://www.m-vave.com/download" target="_blank" rel="noopener">M-VAVE Downloads</a>.</span></p>
+<ol class="en">
+  <li>Connect the FM-1 to your computer with a USB data cable (directly, no hub).</li>
+  <li>Open the <a href="installer/">installer</a> in Chrome or Edge, press Install, and allow MIDI access.</li>
+  <li>Don't unplug it while writing. The installer can also take you back to the official V15.</li>
+</ol>
+<p class="en">Then send your .A2M or .OBT songs to the FM-1 from the <a href="transfer/">song transfer page</a> (Chrome or Edge), and copy the FM-1's songs back to your computer.</p>
+<ol class="fr">
+  <li>Branche le FM-1 à ton ordinateur avec un câble USB de données (directement, sans hub).</li>
+  <li>Ouvre l'<a href="installer/">installateur</a> dans Chrome ou Edge, appuie sur Installer et autorise l'accès MIDI.</li>
+  <li>Ne débranche pas pendant l'écriture. L'installateur peut aussi te ramener à la V15 officielle.</li>
+</ol>
+<p class="fr">Ensuite, envoie tes morceaux .A2M ou .OBT au FM-1 depuis la <a href="transfer/">page de transfert</a> (Chrome ou Edge), et récupère sur ton ordinateur les morceaux du FM-1.</p>
+<p class="small"><span class="en">Free and open source, at your own risk: the author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware.</span><span class="fr">Gratuit et libre, à tes risques : l'auteur décline toute responsabilité si ton FM-1 est endommagé ou se comporte mal à cause de ce firmware custom.</span></p>
+
+<h2><span class="en">.A2M: one song, many trackers</span><span class="fr">.A2M : un morceau, plusieurs trackers</span></h2>
+<p class="en">The .A2M format was created by <a href="https://www.adlibtracker.net" target="_blank" rel="noopener">AdLib Tracker II</a>. A song made on OPLBend Tracker exports to .A2M, so it opens in AdLib Tracker II (DOS, or DOSBox on a computer) and in my other OPL3 trackers — on a real OPL3 chip too.</p>
+<p class="fr">Le format .A2M a été créé par <a href="https://www.adlibtracker.net" target="_blank" rel="noopener">AdLib Tracker II</a>. Un morceau fait sur OPLBend Tracker s'exporte en .A2M : il s'ouvre dans AdLib Tracker II (sous DOS, ou dans DOSBox sur ordinateur) et dans mes autres trackers OPL3 — sur une vraie puce OPL3 aussi.</p>
+
+<h2><span class="en">My other trackers</span><span class="fr">Mes autres trackers</span></h2>
+<p><b><span class="en">OPL3</span><span class="fr">OPL3</span></b> <span class="small"><span class="en">— all of them read .A2M songs</span><span class="fr">— tous lisent les morceaux .A2M</span></span></p>
+<div class="card"><b><a href="https://apps.apple.com/app/amber-opl-tracker/id6778586911" target="_blank" rel="noopener">AMBER OPL Tracker</a></b> — <span class="en">OPL3 tracker for iPad, on the App Store.</span><span class="fr">tracker OPL3 pour iPad, sur l'App Store.</span></div>
+<div class="card"><b>RG350 OPL3 tracker</b> — <span class="en">an OPL3 tracker for the RG350 handheld, playing a real OPL3 chip (YMF262) through the RetroWave OPL3.</span><span class="fr">un tracker OPL3 pour la console RG350, qui joue une vraie puce OPL3 (YMF262) via la RetroWave OPL3.</span> <span class="small"><span class="en">Coming soon.</span><span class="fr">Bientôt.</span></span></div>
+<div class="card"><b>DOSTRACKER</b> — <span class="en">an OPL3 FM tracker for MS-DOS, with Sound Blaster samples on top (16-bit if the sound card supports it). It runs on any PC with an OPL3 or OPL3-compatible sound card — very common in the 1990s and early 2000s.</span><span class="fr">un tracker FM OPL3 pour MS-DOS, avec en plus les samples de la Sound Blaster (16 bits si la carte son le permet). Il marche sur tout PC qui a une carte son OPL3 ou compatible OPL3 — très courantes dans les années 90 et au début des années 2000.</span> <span class="small"><span class="en">Coming soon.</span><span class="fr">Bientôt.</span></span></div>
+<p><b><span class="en">FM, but not OPL3</span><span class="fr">FM, mais pas OPL3</span></b> <span class="small"><span class="en">— the Sega Mega Drive's YM2612, open source</span><span class="fr">— la YM2612 de la Sega Mega Drive, en open source</span></span></p>
+<div class="card"><b><a href="https://github.com/AudrenThibault/GeneTrackerMD" target="_blank" rel="noopener">GeneTrackerMD</a></b> — <span class="en">an LSDJ-style tracker running on the Sega Mega Drive itself: YM2612 FM, SN76489 PSG and a PCM voice.</span><span class="fr">un tracker façon LSDJ qui tourne sur la Sega Mega Drive elle-même : FM YM2612, PSG SN76489 et une voix PCM.</span></div>
+<div class="card"><b><a href="https://github.com/AudrenThibault/GeneTrackerDS" target="_blank" rel="noopener">GeneTrackerDS</a></b> — <span class="en">its sibling on the Nintendo DSi, with the Mega Drive chips emulated; songs travel between the two.</span><span class="fr">son jumeau sur Nintendo DSi, avec les puces de la Mega Drive émulées ; les morceaux passent de l'un à l'autre.</span></div>
+<p><b><span class="en">Other trackers</span><span class="fr">Autres trackers</span></b></p>
+<div class="card"><b><a href="https://apps.apple.com/app/xm-zhootracker/id6757368800" target="_blank" rel="noopener">XM Zhootracker</a></b> — <span class="en">an XM (FastTracker II) sample tracker for iPad, on the App Store.</span><span class="fr">un tracker XM (FastTracker II) à samples pour iPad, sur l'App Store.</span></div>
+
+<h2><span class="en">Support</span><span class="fr">Soutenir</span></h2>
+<p class="en">OPLBend Tracker is free. If you'd like to support its development, you can make a donation on Ko-fi (a donation website, no account needed), or buy my music on <a href="https://mazhootmusic.bandcamp.com" target="_blank" rel="noopener">Bandcamp</a>: I am also a musician, under the name Maz Hoot. Thank you!</p>
+<p class="fr">OPLBend Tracker est gratuit. Si tu veux soutenir son développement, tu peux faire un don sur Ko-fi (un site de dons, sans créer de compte), ou acheter ma musique sur <a href="https://mazhootmusic.bandcamp.com" target="_blank" rel="noopener">Bandcamp</a> : je suis aussi musicien, sous le nom de Maz Hoot. Merci !</p>
+<p class="btns"><a class="main" href="https://ko-fi.com/audren" target="_blank" rel="noopener">♥ Donate (Ko-fi)</a> <a href="https://mazhootmusic.bandcamp.com" target="_blank" rel="noopener">Bandcamp</a></p>
+
+<h2><span class="en">Credits &amp; licences</span><span class="fr">Crédits et licences</span></h2>
+<p class="small">OPLBend Tracker by Audren. GPL-3.0, <a href="https://github.com/AudrenThibault/OPLBend-Tracker">source on GitHub</a>.
+Built on <a href="https://github.com/hugelton/Felucca" target="_blank" rel="noopener">Felucca</a> by Leo Kuroshita (@kurogedelic), Hügelton Instruments (hardware layer, loader, installer; GPL-3.0).
+The .A2M format and the instrument presets come from <a href="https://www.adlibtracker.net" target="_blank" rel="noopener">AdLib Tracker II</a>.
+The firmware package holds three JieLi AC79 SDK files (JieLi Technology, Apache-2.0). Font: IBM Plex Mono (SIL OFL 1.1). <a href="firmware/LICENSES/">All licences</a>.
+M-VAVE and FM-1 are trademarks of their respective owners; this firmware is not affiliated with M-VAVE.</p>
+</main>
+<script>
+  const root = document.documentElement, b = document.getElementById("lang");
+  const set = (l) => { root.lang = l; b.textContent = l === "fr" ? "English" : "Français"; };
+  set("en");
+  b.addEventListener("click", () => set(root.lang === "fr" ? "en" : "fr"));
+</script>
+</body>
+</html>

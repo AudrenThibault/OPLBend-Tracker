@@ -1,0 +1,298 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     OPLBend Tracker song transfer: the protocol of firmware/compat/fm1_transfert.c over WebMIDI
+     (SysEx F0 pack7(00 'T' 'K' cmd ...) F7, one answer per message), as mac/Transfert.swift does it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Song transfer — OPLBend Tracker for the M-VAVE FM-1</title>
+<link rel="canonical" href="https://audrenthibault.github.io/OPLBend-Tracker/transfer/">
+<meta name="description" content="Send .A2M (AdLib Tracker II) and .OBT songs to OPLBend Tracker on the M-VAVE FM-1 from the browser over USB, and copy the FM-1's songs back to your computer.">
+<style>
+  :root { --bg: #fbf3f8; --fg: #24082f; --dim: #7a5a80; --accent: #d8152b; --card: #f3e3ee; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #080010; --fg: #f5cfe6; --dim: #a98ab0; --accent: #ff3048; --card: #160a1e; }
+  }
+  :root[data-theme="dark"] { --bg: #080010; --fg: #f5cfe6; --dim: #a98ab0; --accent: #ff3048; --card: #160a1e; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 40px 16px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 20px; }
+  h2 { font-size: 18px; margin: 28px 0 8px; }
+  a { color: inherit; }
+  p { margin: 0 0 14px; }
+  .lang { float: right; font-size: 13px; cursor: pointer; text-decoration: underline; background: none; padding: 0; color: var(--dim); border: 0; }
+  button.go { font: inherit; background: var(--fg); color: var(--bg); border: 0; padding: 8px 20px; cursor: pointer; }
+  button.go:disabled { opacity: .3; cursor: default; }
+  button.small { font: inherit; font-size: 13px; background: none; color: inherit; border: 1px solid var(--dim); padding: 2px 10px; cursor: pointer; }
+  .small { color: var(--dim); font-size: 13px; }
+  .drop { border: 2px dashed var(--dim); padding: 20px; text-align: center; cursor: pointer; margin-bottom: 12px; }
+  .drop.over { border-color: var(--accent); }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--card); padding: 6px 12px; margin: 6px 0; }
+  .row .name { overflow-wrap: anywhere; }
+  .row .state { color: var(--dim); font-size: 13px; white-space: nowrap; }
+  .err { color: var(--accent); }
+  #status { min-height: 1.6em; }
+</style>
+</head>
+<body>
+<main>
+  <button class="lang" id="lang"></button>
+  <h1>OPLBend Tracker</h1>
+  <p class="small"><a href="../" data-t="home"></a></p>
+  <p data-t="intro"></p>
+  <p><button class="go" id="connect" data-t="connect"></button></p>
+  <p id="status"></p>
+
+  <h2 data-t="sendTitle"></h2>
+  <div class="drop" id="drop" data-t="drop"></div>
+  <input id="file" type="file" accept=".a2m,.obt,.xt,.A2M,.OBT,.XT" multiple hidden>
+  <div id="queue"></div>
+  <p><button class="go" id="send" disabled data-t="send"></button></p>
+  <p class="small" data-t="where"></p>
+
+  <h2 data-t="fm1Title"></h2>
+  <p><button class="small" id="list" data-t="list"></button></p>
+  <div id="remote"></div>
+  <p class="small" data-t="exportHint"></p>
+
+  <p class="small" style="margin-top:32px"><span data-t="needs"></span>
+    <a href="../firmware/LICENSE">GPL-3.0</a> · <a href="https://github.com/AudrenThibault/OPLBend-Tracker">GitHub</a></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const TEXT = {
+  en: {
+    other: "Français", home: "← OPLBend Tracker",
+    intro: "Send your .A2M songs to OPLBend Tracker on the FM-1: songs made with AdLib Tracker II, AMBER OPL Tracker, DOSTRACKER or the RG350 OPL3 tracker, and OPLBend Tracker's own .OBT songs. You can also copy the FM-1's songs to your computer. Connect the FM-1 with a USB data cable, with OPLBend Tracker running, then press Connect. Works in Chrome or Edge (desktop).",
+    connect: "Connect", searching: "Looking for the FM-1…", connected: "Connected: ",
+    notfound: "FM-1 not found. Check that OPLBend Tracker is running on it, that the USB cable carries data, and that no other app uses its MIDI port, then press Connect again.",
+    nomidi: "This browser cannot do it. Open the page in Chrome or Edge.",
+    denied: "MIDI (SysEx) access was not allowed. Allow MIDI in the site settings (address bar) and press Connect again.",
+    sendTitle: "Send songs to the FM-1",
+    drop: "Drop .A2M or .OBT files here, or click to choose them",
+    send: "Send to the FM-1",
+    where: "They go into the songs folder: PROJECT > LOAD on the FM-1. A song with the same name is replaced.",
+    fm1Title: "Songs on the FM-1", list: "Read the list", empty: "No songs on the FM-1.", get: "Download",
+    exportHint: "To open a song in AdLib Tracker II or AMBER OPL Tracker: PROJECT > EXPORT A2M on the FM-1, then download it here.",
+    ready: "ready", sending: "sending…", sent: "sent ✓", unreadable: "unreadable file", noanswer: "no answer from the FM-1",
+    refused: "refused (no room left?)", full: "memory full", badxfer: "transfer error, send it again", notsaved: "not saved",
+    reading: "reading…", done: "downloaded ✓",
+    needs: "Needs OPLBend Tracker on the FM-1.",
+  },
+  fr: {
+    other: "English", home: "← OPLBend Tracker",
+    intro: "Envoie tes morceaux .A2M à OPLBend Tracker sur le FM-1 : ceux faits avec AdLib Tracker II, AMBER OPL Tracker, DOSTRACKER ou le tracker OPL3 de la RG350, et les morceaux .OBT d'OPLBend Tracker. Tu peux aussi copier les morceaux du FM-1 sur ton ordinateur. Branche le FM-1 avec un câble USB de données, OPLBend Tracker allumé, puis appuie sur Connecter. Marche dans Chrome ou Edge (ordinateur).",
+    connect: "Connecter", searching: "Recherche du FM-1…", connected: "Connecté : ",
+    notfound: "FM-1 introuvable. Vérifie qu'OPLBend Tracker y tourne, que le câble USB transmet les données et qu'aucune autre appli n'utilise son port MIDI, puis appuie à nouveau sur Connecter.",
+    nomidi: "Ce navigateur ne peut pas le faire. Ouvre la page dans Chrome ou Edge.",
+    denied: "L'accès MIDI (SysEx) n'a pas été autorisé. Autorise le MIDI dans les réglages du site (barre d'adresse) et appuie à nouveau sur Connecter.",
+    sendTitle: "Envoyer des morceaux au FM-1",
+    drop: "Dépose ici des fichiers .A2M ou .OBT, ou clique pour les choisir",
+    send: "Envoyer au FM-1",
+    where: "Ils arrivent dans le dossier des morceaux : PROJECT > LOAD sur le FM-1. Un morceau du même nom est remplacé.",
+    fm1Title: "Les morceaux du FM-1", list: "Lire la liste", empty: "Aucun morceau sur le FM-1.", get: "Télécharger",
+    exportHint: "Pour ouvrir un morceau dans AdLib Tracker II ou AMBER OPL Tracker : PROJECT > EXPORT A2M sur le FM-1, puis télécharge-le ici.",
+    ready: "prêt", sending: "envoi…", sent: "envoyé ✓", unreadable: "fichier illisible", noanswer: "pas de réponse du FM-1",
+    refused: "refusé (plus de place ?)", full: "mémoire pleine", badxfer: "erreur de transfert, renvoie-le", notsaved: "non enregistré",
+    reading: "lecture…", done: "téléchargé ✓",
+    needs: "Il faut OPLBend Tracker sur le FM-1.",
+  },
+};
+let lang = "en";
+const t = (k) => TEXT[lang][k];
+function applyLang() {
+  document.documentElement.lang = lang;
+  $("lang").textContent = t("other");
+  document.querySelectorAll("[data-t]").forEach((e) => { e.textContent = t(e.dataset.t); });
+  renderQueue();
+}
+$("lang").onclick = () => { lang = lang === "en" ? "fr" : "en"; applyLang(); };
+
+// ── the protocol (firmware/compat/fm1_transfert.c) ──────────────────────────
+const HEAD = [0x00, 0x54, 0x4B];                  // 00 'T' 'K'
+const HELLO = 0x00, BEGIN = 0x01, DATA = 0x02, END = 0x03, CANCEL = 0x04, LIST = 0x05, OPEN = 0x06, READ = 0x07, CLOSE = 0x08;
+const CHUNK = 512;
+function pack7(data) {                            // 8 bits -> 7, low bits first (ota_pack7)
+  const out = []; let acc = 0, nb = 0;
+  for (const b of data) { acc |= b << nb; nb += 8; while (nb >= 7) { out.push(acc & 0x7F); acc >>>= 7; nb -= 7; } }
+  if (nb) out.push(acc & 0x7F);
+  return out;
+}
+function unpack7(s) {
+  const out = []; let acc = 0, nb = 0;
+  for (const b of s) { acc |= (b & 0x7F) << nb; nb += 7; while (nb >= 8) { out.push(acc & 0xFF); acc >>>= 8; nb -= 8; } }
+  return out;
+}
+const u32 = (v) => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+const rd32 = (r, i) => (r[i] | r[i + 1] << 8 | r[i + 2] << 16 | r[i + 3] << 24) >>> 0;
+const CRC_T = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+function crc32(d) { let c = 0xFFFFFFFF; for (const b of d) c = CRC_T[(c ^ b) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function fm1Name(name) {                          // capitals, letters, digits, space - _ . ; 40 at most
+  return name.toUpperCase().replace(/[^A-Z0-9 ._-]/g, "_").replace(/^\./, "_").slice(0, 40);
+}
+
+class Link {
+  constructor(input, output) {
+    this.input = input; this.output = output; this.waiter = null;
+    input.onmidimessage = (e) => {
+      const d = e.data;
+      if (d[0] !== 0xF0 || d[d.length - 1] !== 0xF7) return;
+      const m = unpack7(d.slice(1, -1));
+      if (m.length < 5 || m[0] !== 0 || m[1] !== 0x54 || m[2] !== 0x4B) return;   // not ours (the updater's)
+      if (this.waiter) { const w = this.waiter; this.waiter = null; w(m); }
+    };
+  }
+  ask(msg, ms = 3000) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { this.waiter = null; resolve(null); }, ms);
+      this.waiter = (m) => { clearTimeout(timer); resolve(m); };
+      this.output.send([0xF0, ...pack7(msg), 0xF7]);
+    });
+  }
+  async askSure(msg) {                            // up to three tries if the FM-1 does not answer
+    for (let k = 0; k < 3; k++) { const r = await this.ask(msg); if (r) return r; }
+    return null;
+  }
+}
+
+let link = null, busy = false;
+const status = (s, bad) => { $("status").textContent = s; $("status").className = bad ? "err" : ""; };
+
+async function connect() {                        // -> true when the FM-1 answers
+  if (!navigator.requestMIDIAccess) { status(t("nomidi"), true); return false; }
+  let access;
+  try { access = await navigator.requestMIDIAccess({ sysex: true }); }
+  catch (_) { status(t("denied"), true); return false; }
+  status(t("searching"));
+  link = null;
+  const outs = [...access.outputs.values()];
+  for (const input of access.inputs.values()) {
+    if (input.state === "disconnected") continue;
+    if (!/fm-1|felucca|ota|composite|sinco|usb-midi|oplbend/i.test(input.name || "")) continue;   // never probe other gear
+    const output = outs.find((o) => o.name === input.name && o.state !== "disconnected");
+    if (!output) continue;
+    try { await input.open(); await output.open(); } catch (_) { continue; }
+    const l = new Link(input, output);
+    const r = await l.ask([...HEAD, HELLO], 800);
+    if (r && r[3] === (HELLO | 0x40) && r[4] === 0) {
+      link = l;
+      status(t("connected") + new TextDecoder().decode(new Uint8Array(r.slice(5))));
+      break;
+    }
+    input.onmidimessage = null;
+  }
+  if (!link) status(t("notfound"), true);
+  renderQueue();
+  return !!link;
+}
+$("connect").onclick = connect;
+
+// ── sending ──────────────────────────────────────────────────────────────────
+const queue = [];                                 // {file, state, err, done}
+function addFiles(files) {
+  for (const f of files) if (/\.(a2m|obt|xt)$/i.test(f.name) && !queue.some((q) => q.file.name === f.name)) queue.push({ file: f, state: "ready" });
+  renderQueue();
+}
+function renderQueue() {
+  const box = $("queue"); box.textContent = "";
+  for (const q of queue) {
+    const row = document.createElement("div"); row.className = "row";
+    const n = document.createElement("span"); n.className = "name"; n.textContent = fm1Name(q.file.name);
+    const s = document.createElement("span"); s.className = "state" + (q.err ? " err" : "");
+    s.textContent = q.pct != null && !q.done && !q.err ? `${t("sending")} ${q.pct}%` : t(q.state);
+    row.append(n, s); box.append(row);
+  }
+  $("send").disabled = busy || !queue.some((q) => !q.done);
+}
+$("drop").onclick = () => $("file").click();
+$("file").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
+$("drop").ondragover = (e) => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = (e) => { e.preventDefault(); $("drop").classList.remove("over"); addFiles(e.dataTransfer.files); };
+
+async function sendOne(q) {
+  const fail = (k) => { q.state = k; q.err = true; q.pct = null; renderQueue(); };
+  let data;
+  try { data = new Uint8Array(await q.file.arrayBuffer()); } catch (_) { return fail("unreadable"); }
+  if (!data.length) return fail("unreadable");
+  q.err = false; q.pct = 0; renderQueue();
+  const name = [...new TextEncoder().encode(fm1Name(q.file.name))];
+  let r = await link.askSure([...HEAD, BEGIN, ...u32(data.length), ...name, 0]);
+  if (!r || r[3] !== (BEGIN | 0x40)) return fail("noanswer");
+  if (r[4] !== 0) return fail("refused");
+  let pos = 0;
+  while (pos < data.length) {
+    const end = Math.min(pos + CHUNK, data.length);
+    r = await link.askSure([...HEAD, DATA, ...u32(pos), ...data.subarray(pos, end)]);
+    if (!r || r[3] !== (DATA | 0x40)) { await link.ask([...HEAD, CANCEL]); return fail("noanswer"); }
+    if (r[4] === 0) pos = end;
+    else if (r[4] === 2 && r.length >= 9) pos = rd32(r, 5);   // the FM-1 expects another position: resume there
+    else return fail("full");
+    q.pct = Math.floor(100 * pos / data.length); renderQueue();
+  }
+  r = await link.askSure([...HEAD, END, ...u32(crc32(data))]);
+  if (!r || r[3] !== (END | 0x40)) return fail("noanswer");
+  if (r[4] !== 0) return fail(r[4] === 3 ? "badxfer" : "notsaved");
+  q.state = "sent"; q.done = true; q.pct = null; renderQueue();
+}
+$("send").onclick = async () => {
+  if (busy) return;
+  busy = true; renderQueue();
+  if (!link && !(await connect())) { busy = false; renderQueue(); return; }
+  for (const q of queue) if (!q.done) await sendOne(q);
+  busy = false; renderQueue();
+};
+
+// ── the FM-1's songs ─────────────────────────────────────────────────────────
+$("list").onclick = async () => {
+  if (busy) return;
+  busy = true; $("list").disabled = true;
+  if (!link && !(await connect())) { busy = false; $("list").disabled = false; return; }
+  const box = $("remote"); box.textContent = "";
+  const songs = [];
+  for (let k = 0; k < 256; k++) {
+    const r = await link.askSure([...HEAD, LIST, k]);
+    if (!r || r[3] !== (LIST | 0x40)) { status(t("noanswer"), true); break; }
+    if (r[4] !== 0) break;
+    songs.push({ size: rd32(r, 5), name: new TextDecoder().decode(new Uint8Array(r.slice(9))) });
+  }
+  if (!songs.length) box.textContent = t("empty");
+  for (const s of songs) {
+    const row = document.createElement("div"); row.className = "row";
+    const n = document.createElement("span"); n.className = "name"; n.textContent = `${s.name} (${s.size} B)`;
+    const b = document.createElement("button"); b.className = "small"; b.textContent = t("get");
+    b.onclick = () => download(s, b);
+    row.append(n, b); box.append(row);
+  }
+  busy = false; $("list").disabled = false; renderQueue();
+};
+async function download(s, b) {
+  if (busy) return;
+  busy = true; b.disabled = true; b.textContent = t("reading");
+  const fail = () => { b.textContent = t("noanswer"); b.disabled = false; busy = false; };
+  let r = await link.askSure([...HEAD, OPEN, ...new TextEncoder().encode(s.name), 0]);
+  if (!r || r[3] !== (OPEN | 0x40) || r[4] !== 0) return fail();
+  const size = rd32(r, 5), out = new Uint8Array(size);
+  let pos = 0;
+  while (pos < size) {
+    r = await link.askSure([...HEAD, READ, ...u32(pos)]);
+    if (!r || r[3] !== (READ | 0x40) || r[4] !== 0 || rd32(r, 5) !== pos) { await link.ask([...HEAD, CLOSE]); return fail(); }
+    const part = r.slice(9, 9 + Math.min(256, size - pos));
+    if (!part.length) { await link.ask([...HEAD, CLOSE]); return fail(); }
+    out.set(part, pos); pos += part.length;
+    b.textContent = `${t("reading")} ${Math.floor(100 * pos / size)}%`;
+  }
+  await link.ask([...HEAD, CLOSE]);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([out], { type: "application/octet-stream" }));
+  a.download = s.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  b.textContent = t("done"); b.disabled = false; busy = false;
+}
+
+applyLang();
+</script>
+</body>
+</html>

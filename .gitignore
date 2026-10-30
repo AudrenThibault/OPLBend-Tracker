@@ -1,0 +1,15 @@
+# builds
+build/
+mac/build/
+*.o
+.DS_Store
+# old code
+archive/
+# NEVER publish the official M-VAVE firmware (it lives outside this folder; belt and braces)
+FM-1 official firmware*/
+*FM-1.fwsc
+# GIFs downloaded from the internet (not ours): never published; the firmware uses tools/anims.py
+assets/gifs/
+DEVELOPMENT.md
+TODO.md
+__pycache__/
