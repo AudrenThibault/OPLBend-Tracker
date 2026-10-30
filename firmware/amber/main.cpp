@@ -794,6 +794,19 @@ static bool loopEnleveDerniere(void) {
     }
   return false;
 }
+// CHAQUE COUCHE A SON SON, comme chaque piste de SLOOP : l'instrument kLoopIns0 + c (CE..D3). Le clavier joue
+// celui de la couche du curseur, PRESETS et les molettes ne changent que lui ; une note enregistree le garde.
+// (Prepare la premiere fois : une copie du son que le clavier avait.)
+static bool g_loopSonPret[6];
+// la couche d'un OVERDUB : celle du curseur si elle est vide, sinon la premiere vide (sinon celle du curseur)
+static int loopCoucheLibre(int curseur) {
+  bool pleine[6] = { false, false, false, false, false, false };
+  for (int i = 0; i < g_loopN; i++)
+    if (g_loop[(int)fm1_opaque((uint32_t)i)].on == 1) pleine[g_loop[(int)fm1_opaque((uint32_t)i)].couche % 6] = true;
+  if (!pleine[curseur % 6]) return curseur % 6;
+  for (int c = 0; c < 6; c++) if (!pleine[c]) return c;
+  return curseur % 6;
+}
 static void loopEfface(void) {
   g_loopEtat = 0;
   loopSilence();
@@ -1680,6 +1693,25 @@ int main(void) {
     md_replayer_set_instr_gen_val(ins, MD_GEN_PROP_PANNING, 128);
     md_replayer_set_instr_name(ins, FM1_PRESET_NOMS[k]);
   };
+  // LOOPER : le son de la couche c (son instrument a elle, prepare si besoin depuis le son `depuis`), et ses notes
+  // deja enregistrees y passent (les batteries de DRUM KEYBOARD gardent les leurs)
+  auto loopSonCouche = [&](int c, int depuis) -> int {
+    const int ins = kLoopIns0 + c;
+    if (!g_loopSonPret[c]) {
+      g_loopSonPret[c] = true;
+      md_replayer_set_instr_kind(ins, MD_INSTR_KIND_OPL);
+      if (depuis > 0 && depuis != ins)
+        for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(ins, o, md_replayer_get_instr_opl(depuis, o));
+      char nm[12]; siprintf(nm, "LOOP %d", c + 1);
+      md_replayer_set_instr_name(ins, nm);
+    }
+    for (int i = 0; i < g_loopN; i++) {
+      LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
+      const int ii = (int)fm1_opaque(e.ins);
+      if (e.couche % kLoopVoies == c && !(ii >= kDkIns0 && ii < kDkIns0 + 27)) e.ins = (uint8_t)ins;
+    }
+    return ins;
+  };
   // PERC : le son de batterie choisi (1 BD .. 5 HH) charge son preset d'AdLib Tracker II, retouchable ensuite. Sur
   // la puce, la grosse caisse est une voix FM a deux operateurs (un son melodique y sonne... melodique), les autres
   // un seul operateur : la PORTEUSE de l'instrument (compat/fm1_voix.c). TT et HH sont des modulateurs sur la puce :
@@ -2218,17 +2250,13 @@ int main(void) {
     drumOctTout = 0;
     demiAM = false; memset(amAvant, 0, sizeof amAvant);
     fm1_mode_tracker();                            // (un morceau charge : SEQ revient en TRACKER, plus de LOOPER)
-    g_loopNbGarde = 0;                             // (les sons de la boucle, mis de cote : remis apres le chargement)
-    for (int i = 0; i < g_loopN; i++) {
-      const int ii = (int)fm1_opaque(g_loop[i].ins);
-      if (ii >= kDkIns0 && ii < kDkIns0 + 27) continue;
-      int k = 0;
-      while (k < g_loopNbGarde && g_loopGardeIns[k] != ii) k++;
-      if (k == g_loopNbGarde && k < 6) {
-        g_loopGardeIns[k] = (uint8_t)ii;
-        for (int o = 0; o < MD_OPL_OCTETS; o++) g_loopGardeOpl[k][o] = md_replayer_get_instr_opl(ii, o);
-        g_loopNbGarde++;
-      }
+    // (les sons des couches, mis de cote : remis apres le chargement, chacun sur l'instrument de sa couche)
+    g_loopNbGarde = 0;
+    for (int c = 0; c < 6; c++) {
+      if (!g_loopSonPret[c]) continue;
+      g_loopGardeIns[c] = (uint8_t)(kLoopIns0 + c);
+      for (int o = 0; o < MD_OPL_OCTETS; o++) g_loopGardeOpl[c][o] = md_replayer_get_instr_opl(kLoopIns0 + c, o);
+      g_loopNbGarde = c + 1;
     }
     g_loopARemettre = g_loopN > 0;
     g_dkPret = false;                              // (DRUM KEYBOARD : ses sons, a refaire dans le nouveau morceau)
@@ -3062,6 +3090,7 @@ int main(void) {
       g_loopARemettre = false;
       bool batteries = fm1_drumkeys();
       for (int k = 0; k < g_loopNbGarde; k++) {
+        if (!g_loopSonPret[k]) continue;
         md_replayer_init_default_instrument(kLoopIns0 + k - 1);
         for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(kLoopIns0 + k, o, g_loopGardeOpl[k][o]);
         char nm[12]; siprintf(nm, "LOOP %d", k + 1);
@@ -3069,9 +3098,7 @@ int main(void) {
       }
       for (int i = 0; i < g_loopN; i++) {
         const int ii = (int)fm1_opaque(g_loop[i].ins);
-        if (ii >= kDkIns0 && ii < kDkIns0 + 27) { batteries = true; continue; }
-        for (int k = 0; k < g_loopNbGarde; k++)
-          if (g_loopGardeIns[k] == ii) { g_loop[(int)fm1_opaque((uint32_t)i)].ins = (uint8_t)(kLoopIns0 + k); break; }
+        if (ii >= kDkIns0 && ii < kDkIns0 + 27) batteries = true;
       }
       if (batteries) dkPrepare();
     }
@@ -3325,46 +3352,10 @@ int main(void) {
         for (int k = 0; k < 7; k++) if (pas[k]) aucun = 0;
         modifie = true;
       }
-      // LOOPER : le son d'une couche, a elle seule (PRESETS et les molettes ne changent qu'elle) : les couches
-      // jouees au clavier partagent son instrument ; s'il sert aussi a une autre couche, celle-ci en recoit un
-      // a elle (parmi ceux du LOOPER, CE..D3), copie, et ses notes y passent. 0 : la couche n'a pas de note OPL3.
-      auto loopSonPropre = [&](int c) -> int {
-        auto batterie = [&](int i) { return i >= kDkIns0 && i < kDkIns0 + 27; };
-        int src = 0;
-        for (int i = 0; i < g_loopN && !src; i++) {
-          const LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
-          if (e.on == 1 && e.couche % kLoopVoies == c && !batterie(e.ins)) src = e.ins;
-        }
-        if (!src) return 0;
-        bool partage = false;
-        for (int i = 0; i < g_loopN && !partage; i++) {
-          const LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
-          if (e.on == 1 && e.couche % kLoopVoies != c && e.ins == src) partage = true;
-        }
-        if (!partage) return src;
-        int libre = 0;
-        for (int k = 0; k < 6 && !libre; k++) {
-          const int cand = kLoopIns0 + k;
-          bool pris = false;
-          for (int i = 0; i < g_loopN && !pris; i++)
-            if (g_loop[(int)fm1_opaque((uint32_t)i)].ins == cand) pris = true;
-          if (!pris) libre = cand;
-        }
-        if (!libre) return src;
-        md_replayer_set_instr_kind(libre, MD_INSTR_KIND_OPL);
-        for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(libre, o, md_replayer_get_instr_opl(src, o));
-        { const char *nm = md_replayer_get_instr_name(src); md_replayer_set_instr_name(libre, nm ? nm : ""); }
-        for (int i = 0; i < g_loopN; i++) {
-          LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
-          if (e.couche % kLoopVoies == c && e.ins == src) e.ins = (uint8_t)libre;
-        }
-        return libre;
-      };
       if (page == PAGE_LOOPER && pas[6]) {
         static int loopPreset = 0;
-        const int couche = loopCurL < kLoopVoies ? loopCurL : loopCibleL;   // (la couche du curseur)
-        int ins = g_loopEtat >= 2 && g_loopEtat <= 4 ? loopSonPropre(couche) : 0;
-        if (!ins) ins = instrCible();                  // (pas encore de boucle : le son du clavier)
+        const int couche = loopCurL < kLoopVoies ? loopCurL : loopCibleL;   // (la couche du curseur : son son a elle)
+        const int ins = loopSonCouche(couche, instrCible());
         loopPreset = borne(loopPreset + pas[6], 0, FM1_NB_PRESETS - 1);
         if (ins) {
           appliquePreset(ins, loopPreset);
@@ -3693,8 +3684,8 @@ int main(void) {
         bool plusieurs = tous;
         if (page == PAGE_LOOPER && g_loopEtat >= 2 && g_loopEtat <= 4) {
           const int c = loopCibleL;
-          loopSonPropre(c);                             // (son son a elle : les autres couches ne bougent pas)
           memset(sert, 0, sizeof sert);
+          sert[loopSonCouche(c, instrCible())] = 1;      // (son son a elle, meme vide : les autres couches ne bougent pas)
           for (int i = 0; i < g_loopN; i++) {
             // (fm1_opaque : sans lui, une lecture « b[++r=-2] » que l'emulateur en ligne ne connait pas)
             const int ii = (int)fm1_opaque(g_loop[i].ins);
@@ -4053,7 +4044,7 @@ int main(void) {
         if (recArretAttend && !tenu) {               // relache avant deux secondes : elle repart, une couche de plus
           recArretAttend = false;
           if (g_loopEtat == 4) {
-            g_loopT0 = maintenant; loopRepart(); g_loopCouche++; g_loopEtat = 3;
+            g_loopT0 = maintenant; loopRepart(); g_loopCouche = loopCoucheLibre(loopCurL); loopCurL = g_loopCouche; g_loopEtat = 3;
             g_loopDebutPrise = g_loopN;
             loopCibleL = g_loopCouche % kLoopVoies;
             fm1_annonce2("LOOPER", "OVERDUB");
@@ -4070,6 +4061,7 @@ int main(void) {
         } else if (g_loopEtat == 0) {              // vide : REC arme, la prise part de la premiere note (comme SLOOP)
           loopSilence();
           g_loopN = 0; g_loopCouche = 0; g_loopMuet = 0; g_loopOct = 0; g_loopT0 = maintenant; g_loopEtat = 1;
+          loopCurL = 0;
           loopCibleL = 0;
           fm1_annonce2("LOOPER", "PLAY A NOTE");
         } else if (g_loopEtat == 5) {              // (REC pendant le decompte : abandonne)
@@ -4162,7 +4154,7 @@ int main(void) {
             }
           }
         } else if (g_loopEtat == 2) {              // OVERDUB : une couche de plus
-          g_loopCouche++; g_loopEtat = 3;
+          g_loopCouche = loopCoucheLibre(loopCurL); loopCurL = g_loopCouche; g_loopEtat = 3;
           g_loopDebutPrise = g_loopN;
           loopCibleL = g_loopCouche % kLoopVoies;
           fm1_annonce2("LOOPER", "OVERDUB");
@@ -4551,8 +4543,12 @@ int main(void) {
         // LOOPER : le clavier joue sur la voie de la couche qu'il enregistre (la suivante, quand la boucle tourne
         // sans enregistrer) : on l'entend exactement comme la boucle la rejouera (une autre voie gardait ce que
         // le morceau y avait laisse : la note sonnait bien plus fort en direct qu'en boucle)
-        if (ins && fm1_looper())
-          voie = kLoopVoie0 + (g_loopEtat == 2 || g_loopEtat == 4 ? g_loopCouche + 1 : g_loopCouche) % kLoopVoies;
+        // (et son SON : celui de la couche du curseur, comme la piste choisie de SLOOP ; elle enregistre la-dessus)
+        if (ins && fm1_looper()) {
+          const int cc = (g_loopEtat == 1 || g_loopEtat == 3 ? g_loopCouche : (loopCurL < kLoopVoies ? loopCurL : loopCibleL)) % kLoopVoies;
+          voie = kLoopVoie0 + cc;
+          if (!(ins >= kDkIns0 && ins < kDkIns0 + 27)) ins = loopSonCouche(cc, ins);   // (une batterie garde la sienne)
+        }
         if (ins) {
           if (pianoVoie >= 0) md_replayer_stop_test_note(pianoVoie);
           md_replayer_play_test_note(note, ins, voie);
@@ -6997,11 +6993,7 @@ int main(void) {
           // valeur), son nom, sa valeur ; reparties sur la largeur. KNOB 1, 2, 4 : le son de la couche du curseur
           // (MOD OUT, LENGTH, MOD MULT) ; KNOB 3 : ses pas.
           { const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL, l0 = 4 + kLoopVoies;
-            int ins = 0;                               // (le son de la couche : sa premiere note, sinon le clavier)
-            for (int i = 0; i < g_loopN && !ins; i++)
-              if (g_loop[(int)fm1_opaque((uint32_t)i)].on == 1 && g_loop[(int)fm1_opaque((uint32_t)i)].couche % kLoopVoies == c)
-                ins = g_loop[(int)fm1_opaque((uint32_t)i)].ins;
-            if (!ins) ins = instrCible();
+            const int ins = g_loopSonPret[c] ? kLoopIns0 + c : instrCible();   // (le son de la couche, a elle)
             const bool opl = ins && genreInstr(ins) == GENRE_OPL;
             const int sortie = opl ? 63 - oplLit(ins, MD_OPL_VOL_M, 0, 63) : 0;
             const int duree = !opl ? 0 : oplLit(ins, MD_OPL_FLAGS_C, 5, 1) ? 15 : 15 - oplLit(ins, MD_OPL_AD_C, 0, 15);
