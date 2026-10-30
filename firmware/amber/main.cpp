@@ -670,8 +670,17 @@ static inline uint32_t loopLgLigne(int r) {       // la duree de la rangee r, en
   const uint32_t p = g_loopPasL[r];
   return g_loopUnite * (p ? p : 1u);
 }
-static void loopRepart(void) {                    // (chaque rangee : au debut)
+// La tete de lecture de chaque rangee AVANCE depuis ou elle etait (comme SLOOP) : changer sa longueur (STEPS) ne
+// la fait pas sauter, elle continue et ne repart au debut qu'en atteignant la nouvelle fin. g_loopDernier : le
+// moment de la derniere avance.
+static volatile uint32_t g_loopDernier = 0;
+static void loopRepart(void) {                    // (chaque rangee : au debut, a g_loopT0)
   for (int r = 0; r < 6; r++) g_loopVuL[r] = loopLgLigne(r) - 1u;
+  g_loopDernier = g_loopT0 - 1u;
+}
+static inline uint32_t loopPosLigne(int r) {      // ou en est la rangee r, maintenant
+  const uint32_t lgR = loopLgLigne(r);
+  return (g_loopVuL[r] % lgR + (fm1_echantillons() - g_loopDernier)) % lgR;
 }
 static int g_loopCouche = 0;
 static volatile uint8_t g_loopMuet = 0;
@@ -691,16 +700,16 @@ static bool g_loopARemettre = false;
 static void loopAudio(void) {
   if (g_loopEtat != 2 && g_loopEtat != 3) return;
   uint32_t pos[6], avant[6];
-  const uint32_t d = fm1_echantillons() - g_loopT0;
-  const bool recale = g_loopRecale;
+  const uint32_t maintenant = fm1_echantillons(), e = maintenant - g_loopDernier;
+  g_loopDernier = maintenant;
   g_loopRecale = 0;
-  for (int r = 0; r < 6; r++) {                   // chaque rangee, sur sa longueur
+  for (int r = 0; r < 6; r++) {                   // chaque rangee, sur sa longueur : elle avance d'ou elle etait
     const uint32_t lgR = loopLgLigne(r);
-    pos[r] = d % lgR;
     avant[r] = g_loopVuL[r];
-    // (sa longueur vient de changer, ou sa derniere position n'y tient plus : elle repart de la ou elle est,
-    // sans rejouer d'un coup toutes ses notes, ce qui faisait un son tres fort)
-    if (recale || avant[r] >= lgR) avant[r] = pos[r];
+    // (sa longueur vient de raccourcir et sa position n'y tient plus : elle continue dans la nouvelle, sans
+    // rejouer d'un coup toutes ses notes, ce qui faisait un son tres fort)
+    if (avant[r] >= lgR) avant[r] %= lgR;
+    pos[r] = (avant[r] + e) % lgR;
     if (pos[r] < avant[r] && (int)g_loopPasL[r] < g_loopPasG)   // (une rangee raccourcie repart : sa note se tait)
       md_replayer_stop_test_note(kLoopVoie0 + r);
   }
@@ -715,7 +724,7 @@ static void loopAudio(void) {
       if (t >= lgR) t -= lgR;
     }
     const uint32_t p = pos[rg], a = avant[rg];
-    if (p == a) continue;
+    if (p == a || t >= loopLgLigne(rg)) continue;  // (au-dela de la fin de sa rangee, raccourcie : elle ne joue pas)
     const bool dedans = a < p ? (t > a && t <= p) : (t > a || t <= p);   // (la boucle repart)
     if (!dedans || g_loop[i].on >= 2 || ((g_loopMuet >> rg) & 1u)) continue;
     if (g_loop[i].ins >= kDkIns0 && g_loop[i].ins < kDkIns0 + 27) {
@@ -797,7 +806,9 @@ static void loopNote(int note, int ins, bool on) {
   LoopNote &e = g_loop[g_loopN];
   if (g_loopEtat == 1) e.t = d;
   else {                                          // OVERDUB : au 1/16 le plus proche, comme SLOOP (sa fin : telle quelle)
-    const uint32_t lgR = loopLgLigne(g_loopCouche % kLoopVoies), u = g_loopUnite ? g_loopUnite : 1u, p = d % lgR;
+    const uint32_t lgR = loopLgLigne(g_loopCouche % kLoopVoies), u = g_loopUnite ? g_loopUnite : 1u;
+    const uint32_t p = loopPosLigne(g_loopCouche % kLoopVoies);   // (ou en est sa rangee)
+    (void)d;
     e.t = on ? ((p + u / 2u) / u * u) % lgR : p;
   }
   e.note = (uint8_t)note; e.ins = (uint8_t)ins; e.on = on; e.couche = (uint8_t)g_loopCouche;
@@ -6916,7 +6927,7 @@ int main(void) {
       // le pas qui joue, rangee par rangee (chacune sur sa longueur : STP/CUR)
       int pjL[kLoopVoies];
       for (int c = 0; c < kLoopVoies; c++)
-        pjL[c] = (g_loopEtat == 2 || g_loopEtat == 3) ? (int)(((fm1_echantillons() - g_loopT0) % loopLgLigne(c)) / pasLg) : -1;
+        pjL[c] = (g_loopEtat == 2 || g_loopEtat == 3) ? (int)(loopPosLigne(c) / pasLg) : -1;
       const int pj = pjL[0] * 17 + pjL[1] * 289 + pjL[2] * 4913 + pjL[3] * 83521 + pjL[4] * 1419857 + pjL[5] * 7;
       const int cur = !fm1_clavier() ? loopCurC : -1;
       static uint8_t grille[kLoopVoies][16], note[kLoopVoies][16];
