@@ -3350,7 +3350,7 @@ int main(void) {
         const int ici = boucle && loopCurC > 0 ? noteDuPas(couche, loopCurC - 1) : -1;
         static int loopBtnC = 0;                       // (sur les boutons : 0 a gauche RM / CLR, 1 a droite STEP)
         if (!aTenu) {                                  // (sous les couches : RM LAST, CLR ALL ; STEP, STP/CUR)
-          loopCurL = borne(loopCurL + b - h, 0, kLoopVoies + 1);
+          loopCurL = borne(loopCurL + b - h, 0, kLoopVoies - 1);   // (les couches : plus de boutons dessous)
           if (loopCurL < kLoopVoies) loopCurC = borne(loopCurC + dr - g, 0, 16);
           else loopBtnC = borne(loopBtnC + dr - g, 0, 1);
         }
@@ -6943,22 +6943,11 @@ int main(void) {
         // CLR ALL (A les presse) ; a droite STEP (les pas de toute la boucle) et STP/CUR (ceux de la rangee du
         // curseur), que A + gauche / droite reglent
         if (boucle) {
-          char t[20];
-          const int c2 = zoomNiv ? 4 : 8, rv = loopLigneVue;
-          const bool ici = cur >= 0 && loopCurL >= kLoopVoies;
           fm1_rangee_espace(3 + kLoopVoies);
-          fm1_rangee_petite(4 + kLoopVoies);            // (les boutons en petit : la place des molettes)
-          fm1_rangee_petite(5 + kLoopVoies);
-          texte(0, 4 + kLoopVoies, zoomNiv ? "RM" : "RM LAST", ici && loopCurL == kLoopVoies && !g_loopBtnC ? kAccent : kData);
-          texte(0, 5 + kLoopVoies, zoomNiv ? "CLR" : "CLR ALL", ici && loopCurL == kLoopVoies + 1 && !g_loopBtnC ? kAccent : kData);
-          siprintf(t, zoomNiv ? "STEP:%d" : "STEP: %d", g_loopPasG);
-          texte(c2, 4 + kLoopVoies, t, ici && loopCurL == kLoopVoies && g_loopBtnC ? kAccent : kData);
-          siprintf(t, zoomNiv ? "STP/CUR:%d" : "STP/CUR: %d", g_loopPasL[rv]);
-          texte(c2, 5 + kLoopVoies, t, ici && loopCurL == kLoopVoies + 1 && g_loopBtnC ? kAccent : kData);
           // Les quatre molettes, en bas, comme sur la page TRACKS de SLOOP : un cadran (sa couleur, l'aiguille a la
           // valeur), son nom, sa valeur ; reparties sur la largeur. KNOB 1, 2, 4 : le son de la couche du curseur
           // (MOD OUT, LENGTH, MOD MULT) ; KNOB 3 : ses pas.
-          { const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL, l0 = 6 + kLoopVoies;
+          { const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL, l0 = 4 + kLoopVoies;
             int ins = 0;                               // (le son de la couche : sa premiere note, sinon le clavier)
             for (int i = 0; i < g_loopN && !ins; i++)
               if (g_loop[(int)fm1_opaque((uint32_t)i)].on == 1 && g_loop[(int)fm1_opaque((uint32_t)i)].couche % kLoopVoies == c)
@@ -7011,7 +7000,7 @@ int main(void) {
         { "GLO > DRUM KEYBOARD", "a drum on each key\n\nOCT-/OCT+: octave" },
         { "SEQ > DRUM MACHINE", "BLACK KEYS: sound\nWHITE KEYS: steps\nPLAY: start/stop\nOCT-/OCT+: octave\n\nin the tracker:\nREC: copy pattern" },
         { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nK1: mod out  K2: length\nK3: steps  K4: mod mult\n(the cursor's layer)\nALGORITHM: layer\nPRESETS: preset\nSELECT: op1 wave\nOCT-/OCT+: loop octave" },
-        { "D-PAD > LOOPER", "ARROWS: move\nA: set/unset a note\nA+LEFT/RIGHT: note -1/+1\nA+UP/DOWN: octave -/+\n\non a layer number:\nA+B: remove the layer\nA: put it back\n\nRM LAST, CLR ALL: A\nSTEP: A+LEFT/RIGHT\n(all the loop)\nSTP/CUR: A+LEFT/RIGHT\n(the cursor's layer ; there,\nOP4..MONO keys pick it)" },
+        { "D-PAD > LOOPER", "ARROWS: move\nA: set/unset a note\nA+LEFT/RIGHT: note -1/+1\nA+UP/DOWN: octave -/+\n\non a layer number:\nA+B: remove the layer\nA: put it back" },
         { "HOME > SONG", "one chain per row\n\nSEL+RIGHT: chain\nSEL+UP: project\nSEL+DOWN: drums" },
         { "SONG > CHAIN", "phrases + transpose\n\nSEL+RIGHT: phrase\nSEL+LEFT: song" },
         { "CHAIN > PHRASE", "notes, instruments,\nvolumes, commands\n\nSEL+RIGHT: instrument\nSEL+LEFT: chain" },
