@@ -3314,9 +3314,46 @@ int main(void) {
         for (int k = 0; k < 7; k++) if (pas[k]) aucun = 0;
         modifie = true;
       }
+      // LOOPER : le son d'une couche, a elle seule (PRESETS et les molettes ne changent qu'elle) : les couches
+      // jouees au clavier partagent son instrument ; s'il sert aussi a une autre couche, celle-ci en recoit un
+      // a elle (parmi ceux du LOOPER, CE..D3), copie, et ses notes y passent. 0 : la couche n'a pas de note OPL3.
+      auto loopSonPropre = [&](int c) -> int {
+        auto batterie = [&](int i) { return i >= kDkIns0 && i < kDkIns0 + 27; };
+        int src = 0;
+        for (int i = 0; i < g_loopN && !src; i++) {
+          const LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
+          if (e.on == 1 && e.couche % kLoopVoies == c && !batterie(e.ins)) src = e.ins;
+        }
+        if (!src) return 0;
+        bool partage = false;
+        for (int i = 0; i < g_loopN && !partage; i++) {
+          const LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
+          if (e.on == 1 && e.couche % kLoopVoies != c && e.ins == src) partage = true;
+        }
+        if (!partage) return src;
+        int libre = 0;
+        for (int k = 0; k < 6 && !libre; k++) {
+          const int cand = kLoopIns0 + k;
+          bool pris = false;
+          for (int i = 0; i < g_loopN && !pris; i++)
+            if (g_loop[(int)fm1_opaque((uint32_t)i)].ins == cand) pris = true;
+          if (!pris) libre = cand;
+        }
+        if (!libre) return src;
+        md_replayer_set_instr_kind(libre, MD_INSTR_KIND_OPL);
+        for (int o = 0; o < MD_OPL_OCTETS; o++) md_replayer_set_instr_opl(libre, o, md_replayer_get_instr_opl(src, o));
+        { const char *nm = md_replayer_get_instr_name(src); md_replayer_set_instr_name(libre, nm ? nm : ""); }
+        for (int i = 0; i < g_loopN; i++) {
+          LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
+          if (e.couche % kLoopVoies == c && e.ins == src) e.ins = (uint8_t)libre;
+        }
+        return libre;
+      };
       if (page == PAGE_LOOPER && pas[6]) {
         static int loopPreset = 0;
-        const int ins = instrCible();
+        const int couche = loopCurL < kLoopVoies ? loopCurL : loopCibleL;   // (la couche du curseur)
+        int ins = g_loopEtat >= 2 && g_loopEtat <= 4 ? loopSonPropre(couche) : 0;
+        if (!ins) ins = instrCible();                  // (pas encore de boucle : le son du clavier)
         loopPreset = borne(loopPreset + pas[6], 0, FM1_NB_PRESETS - 1);
         if (ins) {
           appliquePreset(ins, loopPreset);
@@ -3645,6 +3682,7 @@ int main(void) {
         bool plusieurs = tous;
         if (page == PAGE_LOOPER && g_loopEtat >= 2 && g_loopEtat <= 4) {
           const int c = loopCibleL;
+          loopSonPropre(c);                             // (son son a elle : les autres couches ne bougent pas)
           memset(sert, 0, sizeof sert);
           for (int i = 0; i < g_loopN; i++) {
             // (fm1_opaque : sans lui, une lecture « b[++r=-2] » que l'emulateur en ligne ne connait pas)
