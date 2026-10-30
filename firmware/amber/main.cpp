@@ -6961,7 +6961,7 @@ int main(void) {
           const bool muet = (g_loopMuet >> c) & 1u;
           char nm[4]; siprintf(nm, "%d", c + 1);
           fm1_rangee_loop(3 + c);
-          texte(0, 3 + c, nm, cur == 0 && c == loopCurL ? kAccent
+          texte(0, 3 + c, nm, cur <= 0 && c == loopCurL ? kAccent   // (en clavier : la couche des molettes, en rouge)
                               : loopCurL == kLoopVoies + 1 && g_loopBtnC == 1 && c == loopLigneVue ? kSelection   // (celle que STP/CUR regle)
                               : muet ? kVide : kData);
           for (int j = 0; j < 16; j++) {
