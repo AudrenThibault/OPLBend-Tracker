@@ -2,7 +2,7 @@
 
 A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum machine and a looper, for the **M-VAVE FM-1**.
 
-**[Website and web installer →](https://audrenthibault.github.io/OPLBend-Tracker/)**
+**[Website and web installer →](https://mazmusique.fr/oplbendtracker/)**
 
 - LSDJ-style tracker (SONG, CHAIN, PHRASE, INSTR, TABLE) on a software OPL3 (YMF262) FM engine, 18 voices
 - FX inspired by circuit bending, GLITCH, MASTER FX, KNOB GENERAL, drum machine, drum keyboard, looper
@@ -12,7 +12,7 @@ A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum mac
 
 ## Demo
 
-[![OPLBend Tracker demo video](docs/media/demo-poster.jpg)](https://audrenthibault.github.io/OPLBend-Tracker/#demo)
+[![OPLBend Tracker demo video](docs/media/demo-poster.jpg)](https://mazmusique.fr/oplbendtracker/#demo)
 
 *Click to watch the demo on the website.*
 
@@ -38,10 +38,10 @@ It works like LSDJ, M8 Tracker or Little Piggy Tracker. **First press GLO to swi
 ## Install
 
 We recommend running the **official firmware V15** on your FM-1 first: M-VAVE now ships V16, but FM-1 custom firmwares are generally installed over V15, and we cannot be sure installing over V16 works.
-Then open the [web installer](https://audrenthibault.github.io/OPLBend-Tracker/installer/) in Chrome or Edge, with the FM-1 on USB,
+Then open the [web installer](https://mazmusique.fr/oplbendtracker/installer/) in Chrome or Edge, with the FM-1 on USB,
 or use `tools/fm1_install.py`. Use it at your own risk.
 
-To send `.A2M` or `.OBT` songs to the FM-1, or copy its songs back to your computer, use the [song transfer page](https://audrenthibault.github.io/OPLBend-Tracker/transfer/) (Chrome or Edge).
+To send `.A2M` or `.OBT` songs to the FM-1, or copy its songs back to your computer, use the [song transfer page](https://mazmusique.fr/oplbendtracker/transfer/) (Chrome or Edge).
 
 ## Build
 
@@ -64,4 +64,4 @@ M-VAVE and FM-1 are trademarks of their respective owners; this project is not a
 ---
 
 **FR** — Un firmware tracker FM OPL3 gratuit, avec des effets inspirés du circuit bending, une boîte à rythmes et un looper, pour le M-VAVE FM-1. Nous conseillons d'installer d'abord
-la V15 officielle sur le FM-1 ; ensuite, installe-le depuis le [site](https://audrenthibault.github.io/OPLBend-Tracker/) (Chrome ou Edge).
+la V15 officielle sur le FM-1 ; ensuite, installe-le depuis le [site](https://mazmusique.fr/oplbendtracker/) (Chrome ou Edge).

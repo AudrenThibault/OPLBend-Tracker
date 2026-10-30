@@ -62,7 +62,7 @@ def main(pkg, version, out, kofi="https://ko-fi.com/audren"):
     (out / "index.html").write_text((HERE / "index.html").read_text(encoding="utf-8").replace("KOFI_URL", kofi),
                                     encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")
-    site = "https://audrenthibault.github.io/OPLBend-Tracker/"   # (le referencement : robots, plan du site)
+    site = "https://mazmusique.fr/oplbendtracker/"   # (le referencement : robots, plan du site)
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {site}sitemap.xml\n", encoding="utf-8")
     (out / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
