@@ -738,6 +738,37 @@ static void md_opl_macro_tick(int ch) {
 }
 #undef OFF
 
+// ── Le mode percussion de l'OPL3 ─────────────────────────────────────────────
+// Un instrument PERC (1 BD, 2 SD, 3 TT, 4 CY, 5 HH) joue sur le son de batterie de la puce (OPL_VOIX_PERC + 0..4),
+// quelle que soit sa piste. Des qu'il y en a un, la puce est en mode percussion : ses voies 7, 8 et 9 (6..8) sont a
+// la batterie, et une piste melodique prend une autre voix libre (15 voix melodiques). Sans PERC, rien ne change :
+// la piste n sur la voix n.
+static bool md_rythme;
+static int md_voix_pour(int ch) {
+  const int ins = ch_current_instr[ch];
+  const int t = (current_module && ins >= 1 && ins <= MD_MAX_INSTRUMENTS) ? current_module->instruments[ins - 1].perc : 0;
+  if (t >= 1 && t <= 5) {
+    md_rythme = true;
+    return OPL_VOIX_PERC + t - 1;
+  }
+  if (ch >= MD_MAX_CHANNELS)                       // (la note d'essai : sa voie est choisie ailleurs)
+    return ch_hw_voice[ch] < OPL_NB_VOIES ? ch_hw_voice[ch] : 0;
+  if (!md_rythme)
+    return ch;
+  {
+    // une voix libre : ni a la batterie, ni tenue par une autre piste ; la sienne d'abord
+    int v, c;
+    for (v = OPL_NB_VOIES; v >= 0; v--) {
+      const int essai = v == OPL_NB_VOIES ? ch : v;
+      bool prise = essai >= 6 && essai <= 8;
+      for (c = 0; c < MD_TOTAL_VOICES && !prise; c++)
+        if (c != ch && ch_hw_voice[c] == essai && (ch_b0_reg[c] & 0x20)) prise = true;
+      if (!prise && essai < OPL_NB_VOIES) return essai;
+    }
+  }
+  return ch >= 6 && ch <= 8 ? OPL_NB_VOIES - 1 : ch;   // (tout est pris : la derniere)
+}
+
 static void md_key_on(int ch) {
   if (ch < 0 || ch >= MD_TOTAL_VOICES)
     return;
@@ -749,6 +780,13 @@ static void md_key_on(int ch) {
   if (md_channel_is_opl(ch)) {
     md_midi_note_off(ch);
     if (md_channel_muted[ch]) { ds_voix_stop(ch_hw_voice[ch]); return; }
+    {                                              // (la voix de la puce : la sienne, un son de batterie, une libre)
+      const int hw = md_voix_pour(ch);
+      if (hw != ch_hw_voice[ch]) {
+        ds_voix_stop(ch_hw_voice[ch]);
+        ch_hw_voice[ch] = (uint8_t)hw;
+      }
+    }
     opl_voix_instrument(ch_hw_voice[ch], MD_OPL_FM(&ch_instr_shadow[ch]),
                         ch_panning[ch]);
     md_write_volume(ch);
@@ -1262,6 +1300,7 @@ static void md_write_instrument(uint8_t *p, const md_instr_t *ins) {
   p[o++] = ins->kick_decay;
   p[o++] = ins->kick_click;
   p[o++] = ins->kick_drive;
+  p[o++] = ins->perc;          // l'OPL3 en mode percussion (0 MELO ; les anciens fichiers y ont 0)
 }
 
 static void md_read_instrument(const uint8_t *p, md_instr_t *ins, uint16_t version) {
@@ -1364,9 +1403,12 @@ static void md_read_instrument(const uint8_t *p, md_instr_t *ins, uint16_t versi
     ins->kick_decay = p[o++];
     ins->kick_click = p[o++];
     ins->kick_drive = p[o++];
+    ins->perc = p[o] <= 5 ? p[o] : 0;
+    o++;
   } else {
     ins->kick_drop = 96; ins->kick_time = 40; ins->kick_decay = 90;
     ins->kick_click = 40; ins->kick_drive = 60;
+    ins->perc = 0;
   }
   // La seconde zone n'est pas dans le fichier : elle sera réservée au premier
   // réglage, quand on en aura besoin.
@@ -1700,6 +1742,7 @@ void md_replayer_init(int sample_rate) {
   md_prepare_sinus();
   ds_voix_init();
   opl_voix_init();
+  md_rythme = false;                               // (la puce sort du mode percussion)
 
   // Chaque piste est câblée sur la voie matérielle de même numéro.
   for (int c = 0; c < MD_MAX_CHANNELS; c++)
@@ -5047,6 +5090,15 @@ int md_replayer_get_instr_pcm_volume(int ins_idx) {
 int md_replayer_get_instr_sample(int ins_idx) {
   if (!current_module || ins_idx < 1 || ins_idx > MD_MAX_INSTRUMENTS) return 0;
   return current_module->instruments[ins_idx - 1].pcm_sample;
+}
+
+int md_replayer_get_instr_perc(int ins_idx) {
+  if (!current_module || ins_idx < 1 || ins_idx > MD_MAX_INSTRUMENTS) return 0;
+  return current_module->instruments[ins_idx - 1].perc;
+}
+void md_replayer_set_instr_perc(int ins_idx, int perc) {
+  if (!current_module || ins_idx < 1 || ins_idx > MD_MAX_INSTRUMENTS) return;
+  current_module->instruments[ins_idx - 1].perc = (uint8_t)(perc < 0 ? 0 : perc > 5 ? 5 : perc);
 }
 
 void md_replayer_set_instr_kind(int ins_idx, int kind) {

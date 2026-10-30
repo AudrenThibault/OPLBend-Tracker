@@ -887,7 +887,7 @@ bool fm1_morceau_tient_en_a2m(void)
                         return false;             /* (au-dela de la longueur des patterns : perdu) */
                     if (pr->instr) {
                         const md_instr_t *in = &m->instruments[(pr->instr - 1) % MD_MAX_INSTRUMENTS];
-                        if (in->kind != MD_INSTR_KIND_OPL || in->table != MD_EMPTY)
+                        if (in->kind != MD_INSTR_KIND_OPL || in->table != MD_EMPTY || in->perc)   /* (PERC : AT2 non) */
                             return false;
                     }
                 }

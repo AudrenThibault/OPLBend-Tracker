@@ -5,7 +5,10 @@
  * scale level (the chip's KSL table), tremolo and vibrato with the BD depths, left / right outputs.
  * Each operator works as the chip does: a 10-bit phase into the log-sine ROM, the attenuation added in the
  * log domain, the exponent ROM to a 13-bit output (TK_LOGSIN / TK_EXP: tools/gen_tables.py).
- * Not modelled: 4-operator channels (0x104), the rhythm mode, the chip's 49.7 kHz rate (FS here).
+ * The rhythm mode (BD bit 5) as the chip does it (after Nuked-OPL3): BD on channel 7 (its carrier only, x2), HH and
+ * SD on channel 8's operators, TT and CY on channel 9's, keyed by BD bits 4-0, HH / SD / CY phases from the noise
+ * generator and channel 8 / 9 phase bits.
+ * Not modelled: 4-operator channels (0x104), the chip's 49.7 kHz rate (FS here).
  * The envelopes and the LFOs step every ENV_DIV samples; the phases every sample. */
 
 #define OPL3_NV 18u
@@ -140,9 +143,13 @@ static inline int32_t op3_wave(uint32_t ws, uint32_t ph, uint32_t tot)
     return neg ? -v : v;
 }
 
+static uint8_t opl3_rythme;                       /* BD bits 4-0 as last keyed (rhythm mode on, else 0) */
+static uint32_t opl3_bruit = 1u;                  /* the chip's 23-bit noise generator */
+
 static void opl3_reset(void)
 {
     uint32_t c, k;
+    opl3_rythme = 0;
     memset(opl3_reg, 0, sizeof opl3_reg);
     memset(opl3_brut, 0, sizeof opl3_brut);
     for (c = 0; c < OPL3_NV; c++) {
@@ -203,6 +210,29 @@ static uint8_t opl3_plie(uint32_t port, uint32_t reg, uint32_t val)
     return (uint8_t)val;
 }
 
+/* the rhythm mode's keys (BD bits 4-0): each drum keys its operator(s), as a B0 key on does the channel's */
+static void opl3_frappe(op3_t *p, uint32_t on)
+{
+    if (on) {
+        p->phase = 0;
+        p->stage = EG_ATT;
+    } else if (p->stage != EG_OFF)
+        p->stage = EG_REL;
+}
+static void opl3_rythme_cles(uint32_t bd)
+{
+    const uint32_t nv = (bd & 0x20u) ? bd & 0x1Fu : 0u, ch = nv ^ opl3_rythme;
+    if (ch & 0x10u) {                              /* BD: both operators of channel 7 */
+        opl3_frappe(&opl3_ch[6].op[0], nv & 0x10u);
+        opl3_frappe(&opl3_ch[6].op[1], nv & 0x10u);
+    }
+    if (ch & 0x08u) opl3_frappe(&opl3_ch[7].op[1], nv & 0x08u);   /* SD: channel 8's carrier */
+    if (ch & 0x04u) opl3_frappe(&opl3_ch[8].op[0], nv & 0x04u);   /* TT: channel 9's modulator */
+    if (ch & 0x02u) opl3_frappe(&opl3_ch[8].op[1], nv & 0x02u);   /* CY: channel 9's carrier */
+    if (ch & 0x01u) opl3_frappe(&opl3_ch[7].op[0], nv & 0x01u);   /* HH: channel 8's modulator */
+    opl3_rythme = (uint8_t)nv;
+}
+
 /* port 0 / 1, register: the chip's write. Key on / off take effect here, the rest at the next render. */
 static void opl3_ecrit(uint32_t port, uint32_t reg, uint32_t val)
 {
@@ -212,6 +242,8 @@ static void opl3_ecrit(uint32_t port, uint32_t reg, uint32_t val)
     opl3_reg[port][reg] = opl3_plie(port, reg, val);
     if (reg >= 0xB0u && reg <= 0xB8u)
         opl3_touche(&opl3_ch[port * 9u + reg - 0xB0u], val);
+    if (port == 0u && reg == 0xBDu)
+        opl3_rythme_cles(val);
 }
 
 /* Each voice's switches (those on, on its track); the registers already written are bent again (a key on / off stays as it is). */
@@ -291,7 +323,8 @@ static void opl3_rend(int32_t *out, uint32_t n)
         for (c = 0; c < OPL3_NV; c++) {
             ch3_t *h = &opl3_ch[c];
             const uint8_t *r = opl3_reg[c / 9u];
-            const uint32_t bnd = opl3_bend_voie[c];
+            const uint32_t rythme = (bd & 0x20u) && c >= 6u && c <= 8u;   /* (a drum channel: no bending) */
+            const uint32_t bnd = rythme ? 0u : opl3_bend_voie[c];
             uint32_t somme_b, somme_v;
             uint32_t fuzz = 0, stut = 0, xor_ = 0, crush = 0, ring = 0, arp = 0, arplen = 1, ratio = 4096;
             uint32_t glisse = 0, wobble = 0, bruit = 0;
@@ -414,6 +447,8 @@ static void opl3_rend(int32_t *out, uint32_t n)
             }
             ws0 = r[0xE0u + OP_OFF[cc]] & 7u;
             ws1 = r[0xE0u + OP_OFF[cc] + 3u] & 7u;
+            if (rythme && c != 6u)
+                continue;                          /* (channels 8 and 9: their drums, together, below) */
             somme_b = somme_v = 0;
             if (bnd && !h->bgain)
                 h->bgain = 256;
@@ -426,6 +461,8 @@ static void opl3_rend(int32_t *out, uint32_t n)
                 b = op3_wave(ws1, (cr->phase >> 22) + (add ? 0u : (uint32_t)a), cr->tot);
                 cr->phase += cr->inc;
                 v = add ? a + b : b;
+                if (rythme)                        /* BD: the carrier only (even additive), x2 */
+                    v = 2 * b;
                 if (bnd) {                         /* CIRCUIT BENDING, on this sample */
                     const int32_t brut = v;
                     if (stut && ++h->bcnt >= stut) {
@@ -494,6 +531,35 @@ static void opl3_rend(int32_t *out, uint32_t n)
                         h->bgain += cible > h->bgain ? (cible - h->bgain) / 8 : (cible - h->bgain) / 2;
                     }
                 }
+            }
+        }
+        if (bd & 0x20u) {                          /* the rhythm mode: HH, SD (channel 8), TT, CY (channel 9) */
+            const uint8_t *r = opl3_reg[0];
+            op3_t *hh = &opl3_ch[7].op[0], *sd = &opl3_ch[7].op[1], *tt = &opl3_ch[8].op[0], *cy = &opl3_ch[8].op[1];
+            const uint32_t wh = r[0xE0u + OP_OFF[7]] & 7u, ws = r[0xE0u + OP_OFF[7] + 3u] & 7u;
+            const uint32_t wt = r[0xE0u + OP_OFF[8]] & 7u, wc = r[0xE0u + OP_OFF[8] + 3u] & 7u;
+            const uint32_t c7 = r[0xC7u], c8 = r[0xC8u];
+            const uint32_t l7 = 0u - web_bit(c7, 4), r7 = 0u - web_bit(c7, 5), l8 = 0u - web_bit(c8, 4), r8 = 0u - web_bit(c8, 5);
+            int32_t *o = out + 2u * s0;
+            if (hh->stage == EG_OFF && sd->stage == EG_OFF && tt->stage == EG_OFF && cy->stage == EG_OFF)
+                continue;
+            for (i = 0; i < ENV_DIV; i++) {
+                const uint32_t ph = hh->phase >> 22, pc = cy->phase >> 22, bruit = opl3_bruit & 1u;
+                const uint32_t h2 = (ph >> 2) & 1u, h3 = (ph >> 3) & 1u, h7 = (ph >> 7) & 1u, h8 = (ph >> 8) & 1u;
+                const uint32_t c3 = (pc >> 3) & 1u, c5 = (pc >> 5) & 1u;
+                const uint32_t x = (h2 ^ h7) | (h3 ^ c5) | (c3 ^ c5);
+                const int32_t vh = op3_wave(wh, (x << 9) | ((x ^ bruit) ? 0xD0u : 0x34u), hh->tot);
+                const int32_t vs = op3_wave(ws, (h8 << 9) | ((h8 ^ bruit) << 8), sd->tot);
+                const int32_t vt = op3_wave(wt, tt->phase >> 22, tt->tot);
+                const int32_t vc = op3_wave(wc, (x << 9) | 0x80u, cy->tot);
+                const int32_t v7 = 2 * (vh + vs), v8 = 2 * (vt + vc);
+                hh->phase += hh->inc; sd->phase += sd->inc; tt->phase += tt->inc; cy->phase += cy->inc;
+                if (opl3_bruit & 1u)                /* (the chip's noise: a 23-bit LFSR, every sample) */
+                    opl3_bruit ^= 0x800302u;
+                opl3_bruit >>= 1;
+                o[0] += (int32_t)(((uint32_t)v7 & l7) + ((uint32_t)v8 & l8));
+                o[1] += (int32_t)(((uint32_t)v7 & r7) + ((uint32_t)v8 & r8));
+                o += 2;
             }
         }
     }

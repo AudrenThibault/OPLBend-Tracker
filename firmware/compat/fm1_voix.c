@@ -21,11 +21,30 @@ static uint8_t voix_r40[2][0x16];                 /* KSL / TL de chaque operateu
 
 static void ecrit(int port, uint8_t reg, uint8_t val) { opl3_ecrit((uint32_t)port, reg, val); }
 
+/* Le mode percussion (OPL_VOIX_PERC + 0..4 : BD, SD, TT, CY, HH) : le registre BD de la puce, garde ici (bits 7-6 les
+   profondeurs, 5 le mode, 4-0 les cinq sons). Chaque son est sur une voie (7, 8 ou 9 de la puce) et un operateur :
+   BD les deux de la voie 7 ; HH le modulateur et SD la porteuse de la 8 ; TT le modulateur et CY la porteuse de la 9.
+   Un son a un operateur prend les reglages de la PORTEUSE de l'instrument. SD et HH partagent la hauteur de la voie
+   8, TT et CY celle de la 9 (c'est la puce). */
+static uint8_t voix_bd;
+static const uint8_t PERC_VOIE[5] = {6, 7, 8, 8, 7};
+static const uint8_t PERC_OP[5] = {0, 3, 0, 3, 0};    /* (0 le modulateur, 3 la porteuse ; BD : les deux) */
+static const uint8_t PERC_BIT[5] = {0x10, 0x08, 0x04, 0x02, 0x01};
+static int perc_de(int voie) { return voie >= OPL_VOIX_PERC && voie < OPL_VOIX_PERC + 5 ? voie - OPL_VOIX_PERC : -1; }
+static void perc_mode(void)                       /* la puce en mode percussion (la premiere fois) */
+{
+    if (!(voix_bd & 0x20)) {
+        voix_bd = (uint8_t)((voix_bd & 0xC0) | 0x20);
+        ecrit(0, 0xBD, voix_bd);
+    }
+}
+
 static void voix_reinitialise(void)
 {
     int p, r;
     opl3_reset();
     memset(voix_b0, 0, sizeof voix_b0);
+    voix_bd = 0;                                  /* (hors du mode percussion) */
     ecrit(1, 0x05, 0x01);                         /* 0x105 : mode OPL3, dix-huit voies */
     ecrit(0, 0x01, 0x20);                         /* WSE : formes d'onde */
     ecrit(1, 0x04, 0x00);                         /* pas de voies 4 operateurs */
@@ -46,6 +65,24 @@ void opl_voix_instrument(int voie, const uint8_t fm[11], int pan)
 {
     int port, ch, op;
     uint8_t cote;
+    const int t = perc_de(voie);
+    if (t > 0) {                                  /* SD, TT, CY, HH : un operateur, les reglages de la porteuse */
+        perc_mode();
+        op = OP_OFF[PERC_VOIE[t]] + PERC_OP[t];
+        ecrit(0, (uint8_t)(0x20 + op), fm[1]);
+        ecrit(0, (uint8_t)(0x60 + op), fm[5]);
+        ecrit(0, (uint8_t)(0x80 + op), fm[7]);
+        ecrit(0, (uint8_t)(0xE0 + op), fm[9]);
+        voix_r40[0][op] = (uint8_t)((voix_r40[0][op] & 0x3F) | (fm[3] & 0xC0));
+        ecrit(0, (uint8_t)(0x40 + op), voix_r40[0][op]);
+        cote = (uint8_t)(pan < 85 ? 0x10 : (pan > 170 ? 0x20 : 0x30));
+        ecrit(0, (uint8_t)(0xC0 + PERC_VOIE[t]), (uint8_t)(cote | (fm[10] & 0x0F)));
+        return;
+    }
+    if (t == 0) {                                 /* BD : la voie 7 de la puce, comme une voie normale */
+        perc_mode();
+        voie = PERC_VOIE[0];
+    }
     if (voie < 0 || voie >= OPL_NB_VOIES)
         return;
     port = voie / 9;
@@ -72,6 +109,17 @@ void opl_voix_instrument(int voie, const uint8_t fm[11], int pan)
 void opl_voix_volume(int voie, int tlPorteuse, int tlModulateur)
 {
     int port, op;
+    const int t = perc_de(voie);
+    if (t > 0) {                                  /* un operateur : le niveau de la porteuse */
+        op = OP_OFF[PERC_VOIE[t]] + PERC_OP[t];
+        if (tlPorteuse > 63) tlPorteuse = 63;
+        if (tlPorteuse < 0) tlPorteuse = 0;
+        voix_r40[0][op] = (uint8_t)((voix_r40[0][op] & 0xC0) | tlPorteuse);
+        ecrit(0, (uint8_t)(0x40 + op), voix_r40[0][op]);
+        return;
+    }
+    if (t == 0)
+        voie = PERC_VOIE[0];
     if (voie < 0 || voie >= OPL_NB_VOIES)
         return;
     port = voie / 9;
@@ -90,6 +138,20 @@ void opl_voix_hauteur(int voie, int hauteur, bool attaque)
 {
     int port, ch, bloc, fnum;
     uint8_t b0;
+    const int t = perc_de(voie);
+    if (t >= 0) {                                 /* la hauteur de sa voie (sans key on : c'est le registre BD) */
+        ch = PERC_VOIE[t];
+        ecrit(0, (uint8_t)(0xA0 + ch), (uint8_t)(hauteur & 0xFF));
+        voix_b0[ch] = (uint8_t)((((hauteur >> 10) & 7) << 2) | ((hauteur >> 8) & 3));
+        ecrit(0, (uint8_t)(0xB0 + ch), voix_b0[ch]);
+        if (attaque) {                            /* (relache puis frappe : le son repart a coup sur) */
+            voix_bd = (uint8_t)(voix_bd & ~PERC_BIT[t]);
+            ecrit(0, 0xBD, voix_bd);
+            voix_bd = (uint8_t)(voix_bd | PERC_BIT[t]);
+            ecrit(0, 0xBD, voix_bd);
+        }
+        return;
+    }
     if (voie < 0 || voie >= OPL_NB_VOIES)
         return;
     port = voie / 9;
@@ -112,6 +174,12 @@ void opl_voix_hauteur(int voie, int hauteur, bool attaque)
 
 void opl_voix_relache(int voie)
 {
+    const int t = perc_de(voie);
+    if (t >= 0) {
+        voix_bd = (uint8_t)(voix_bd & ~PERC_BIT[t]);
+        ecrit(0, 0xBD, voix_bd);
+        return;
+    }
     if (voie < 0 || voie >= OPL_NB_VOIES)
         return;
     voix_b0[voie] &= (uint8_t)~0x20;
@@ -120,10 +188,9 @@ void opl_voix_relache(int voie)
 
 void opl_voix_profondeurs(int tremolo, int vibrato)
 {
-    uint8_t bd = opl3_reg[0][0xBD];
-    if (tremolo >= 0) bd = (uint8_t)((bd & 0x7F) | (tremolo ? 0x80 : 0));
-    if (vibrato >= 0) bd = (uint8_t)((bd & 0xBF) | (vibrato ? 0x40 : 0));
-    ecrit(0, 0xBD, bd);
+    if (tremolo >= 0) voix_bd = (uint8_t)((voix_bd & 0x7F) | (tremolo ? 0x80 : 0));
+    if (vibrato >= 0) voix_bd = (uint8_t)((voix_bd & 0xBF) | (vibrato ? 0x40 : 0));
+    ecrit(0, 0xBD, voix_bd);                      /* (le mode percussion et ses sons, gardes) */
 }
 
 void opl_voix_purge(void) {}

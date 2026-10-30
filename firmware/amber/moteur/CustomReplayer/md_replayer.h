@@ -467,7 +467,10 @@ typedef struct {
   // lecture ne coupe donc jamais le son. MD_EMPTY = pas encore réservée.
   uint8_t kick_alt;
 
-  uint8_t reserved[3];
+  // L'OPL3 en mode percussion (page INSTR, PERC) : 0 MELO (une voix normale), 1 BD, 2 SD, 3 TT, 4 CY, 5 HH (le son
+  // de batterie de la puce, quelle que soit la piste). Dans le fichier, juste apres les reglages du KICK.
+  uint8_t perc;
+  uint8_t reserved[2];
 } md_instr_t;
 #pragma pack(pop)
 
@@ -980,6 +983,9 @@ void md_replayer_set_instr_table(int ins_idx, int table);
 
 // Puce visée par l'instrument : MD_INSTR_KIND_ANY / _FM / _PSG.
 void md_replayer_set_instr_kind(int ins_idx, int kind);
+// L'OPL3 en mode percussion : 0 MELO, 1 BD, 2 SD, 3 TT, 4 CY, 5 HH (md_instr_t.perc).
+int md_replayer_get_instr_perc(int ins_idx);
+void md_replayer_set_instr_perc(int ins_idx, int perc);
 
 // ── Échantillons ────────────────────────────────────────────────────────────
 // 8 ou 16 bits SIGNÉS, mono, à leur cadence d'origine ; longueur et boucle en
