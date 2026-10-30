@@ -3333,21 +3333,12 @@ int main(void) {
       // LOOPER : SELECT (pas le tempo : la boucle a sa duree) change le preset du son du clavier
       // LOOPER : PRESETS change le preset, SELECT la forme d'onde de l'OP1 (puis FM, AM) : l'inverse des autres pages
       if (page == PAGE_LOOPER) { const int t = pas[4]; pas[4] = pas[6]; pas[6] = t; }
-      // LOOPER, comme la page TRACKS de SLOOP : KNOB 3 STEPS (la couche du curseur) ; ALGORITHM deplace le curseur
-      // de couche en couche (comme la croix). KNOB 1, 2, 4 : les sons de la couche du curseur, comme avant (plus bas)
-      if (page == PAGE_LOOPER && (pas[2] || pas[5])) {
-        if (pas[5]) {
-          loopCurL = borne((loopCurL < kLoopVoies ? loopCurL : loopCibleL) + pas[5], 0, kLoopVoies - 1);
-          loopCibleL = loopCurL; loopLigneVue = loopCurL;
-        }
-        const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL;
-        if (pas[2]) {
-          char l1[16], l2[16];
-          g_loopPasL[c] = (uint8_t)borne(g_loopPasL[c] + pas[2], 1, 64); g_loopRecale = 1;
-          siprintf(l1, "LAYER %d", c + 1); siprintf(l2, "STEPS %d", g_loopPasL[c]);
-          fm1_annonce2(l1, l2);
-        }
-        pas[2] = pas[5] = 0;
+      // LOOPER : ALGORITHM deplace le curseur de couche en couche (comme la croix). Les quatre KNOBS : le son de la
+      // couche du curseur, comme sur les autres pages (plus bas)
+      if (page == PAGE_LOOPER && pas[5]) {
+        loopCurL = borne((loopCurL < kLoopVoies ? loopCurL : loopCibleL) + pas[5], 0, kLoopVoies - 1);
+        loopCibleL = loopCurL; loopLigneVue = loopCurL;
+        pas[5] = 0;
         aucun = 1;
         for (int k = 0; k < 7; k++) if (pas[k]) aucun = 0;
         modifie = true;
@@ -6991,16 +6982,17 @@ int main(void) {
           fm1_rangee_espace(3 + kLoopVoies);
           // Les quatre molettes, en bas, comme sur la page TRACKS de SLOOP : un cadran (sa couleur, l'aiguille a la
           // valeur), son nom, sa valeur ; reparties sur la largeur. KNOB 1, 2, 4 : le son de la couche du curseur
-          // (MOD OUT, LENGTH, MOD MULT) ; KNOB 3 : ses pas.
+          // (MOD OUT, LENGTH, FEEDBACK, MOD MULT).
           { const int c = loopCurL < kLoopVoies ? loopCurL : loopCibleL, l0 = 4 + kLoopVoies;
             const int ins = g_loopSonPret[c] ? kLoopIns0 + c : instrCible();   // (le son de la couche, a elle)
             const bool opl = ins && genreInstr(ins) == GENRE_OPL;
             const int sortie = opl ? 63 - oplLit(ins, MD_OPL_VOL_M, 0, 63) : 0;
             const int duree = !opl ? 0 : oplLit(ins, MD_OPL_FLAGS_C, 5, 1) ? 15 : 15 - oplLit(ins, MD_OPL_AD_C, 0, 15);
             const int mult = opl ? oplLit(ins, MD_OPL_FLAGS_M, 0, 15) : 0;
-            static const char *kNom[4] = { "OUT", "LEN", "STP", "MUL" };
-            const int val[4] = { sortie, duree, g_loopPasL[c], mult };
-            const int hi[4] = { 63, 15, 64, 15 };
+            const int fb = opl ? oplLit(ins, MD_OPL_FB_CONN, 1, 7) : 0;
+            static const char *kNom[4] = { "OUT", "LEN", "FB", "MUL" };
+            const int val[4] = { sortie, duree, fb, mult };
+            const int hi[4] = { 63, 15, 7, 15 };
             const int larg = fm1_entete_cellules() - 1;     // (la largeur d'une rangee petite, en cases)
             static const int8_t kCx[16] = { -2, -3, -3, -3, -2, -1, 0, 1, 2, 3, 3, 3, 2, 1, 0, -1 };
             static const int8_t kCy[16] = { 2, 1, 0, -1, -2, -3, -3, -3, -2, -1, 0, 1, 2, 3, 3, 3 };
@@ -7040,7 +7032,7 @@ int main(void) {
         { "GLO > KEYBOARD", "normal keyboard\n\nPRESETS: change track" },
         { "GLO > DRUM KEYBOARD", "a drum on each key\n\nOCT-/OCT+: octave" },
         { "SEQ > DRUM MACHINE", "BLACK KEYS: sound\nWHITE KEYS: steps\nPLAY: start/stop\nOCT-/OCT+: octave\n\nin the tracker:\nREC: copy pattern" },
-        { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nK1: mod out  K2: length\nK3: steps  K4: mod mult\n(the cursor's layer)\nALGORITHM: layer\nPRESETS: preset\nSELECT: op1 wave\nOCT-/OCT+: loop octave" },
+        { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nK1: mod out  K2: length\nK3: feedback\nK4: mod mult\n(the cursor's layer)\nALGORITHM: layer\nPRESETS: preset\nSELECT: op1 wave\nOCT-/OCT+: loop octave" },
         { "D-PAD > LOOPER", "ARROWS: move\nA: set/unset a note\nA+LEFT/RIGHT: note -1/+1\nA+UP/DOWN: octave -/+\n\non a layer number:\nA+B: remove the layer\nA: put it back" },
         { "HOME > SONG", "one chain per row\n\nSEL+RIGHT: chain\nSEL+UP: project\nSEL+DOWN: drums" },
         { "SONG > CHAIN", "phrases + transpose\n\nSEL+RIGHT: phrase\nSEL+LEFT: song" },
