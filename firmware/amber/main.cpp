@@ -722,66 +722,6 @@ static void loopAudio(void) {
   }
   for (int r = 0; r < 6; r++) g_loopVuL[r] = pos[r];
 }
-// LA BOUCLE FERMEE (REC) : on la cale sur ce qu'on a joue. Le pas : la duree sur laquelle les notes de la
-// premiere prise tombent le mieux (la plus longue qui leur va, a un dixieme de pas pres). La longueur : REC est
-// souvent presse un peu tard ; si la boucle depasse de peu (un pas et demi au plus) un compte regulier (binaire,
-// un multiple de 4 ; ternaire, de 3) sans note dans ce qui depasse, elle s'y arrete ; sinon on garde le compte
-// joue (un rythme asymetrique). Trop peu de notes : seize pas sur la duree, comme avant.
-static void loopDetecte(uint32_t lg, uint32_t *unite, int *nb, uint32_t *decale) {
-  static uint32_t on[kLoopMax];
-  const uint32_t fs = fm1_echantillons_par_seconde(), mini = fs * 7u / 100u, maxi = fs * 3u / 2u;
-  int n = 0;
-  for (int i = 0; i < g_loopN; i++)
-    if (g_loop[i].on == 1 && g_loop[i].t < lg) on[n++] = g_loop[i].t;
-  for (int a = 1; a < n; a++)                    // (dans l'ordre)
-    for (int b = a; b > 0 && on[b - 1] > on[b]; b--) { const uint32_t x = on[b]; on[b] = on[b - 1]; on[b - 1] = x; }
-  *unite = lg / 16u; *nb = 16; *decale = 0;
-  if (n < 3) return;
-  double meilleur = 0.0, meilleurErr = 1e9, plusPetitErr = 1e9, plusPetit = 0.0;
-  for (int a = 0; a < n; a++) {
-    const double ioi = (double)on[a] - (a ? (double)on[a - 1] : 0.0);
-    for (int m = 1; m <= 4; m++) {
-      const double c = ioi / m;
-      if (c < mini || c > maxi) continue;
-      double err = 0.0;                           // (la grille calee sur la premiere note)
-      for (int b = 0; b < n; b++) {
-        const double q = ((double)on[b] - on[0]) / c, f = q - (double)(int)(q + 0.5);
-        err += f < 0 ? -f : f;
-      }
-      err /= n;
-      if (err < 0.1 && c > meilleur) { meilleur = c; meilleurErr = err; }
-      if (err < plusPetitErr) { plusPetitErr = err; plusPetit = c; }
-    }
-  }
-  double c = meilleur > 0.0 ? meilleur : plusPetit;
-  (void)meilleurErr;
-  if (c <= 0.0) return;
-  {                                               // (affine : les moindres carres sur les pas trouves)
-    double sk = 0.0, skt = 0.0;
-    for (int b = 0; b < n; b++) {
-      const int k = (int)(((double)on[b] - on[0]) / c + 0.5);
-      if (k > 0) { sk += (double)k * k; skt += (double)k * ((double)on[b] - on[0]); }
-    }
-    if (sk > 0.0) c = skt / sk;
-  }
-  // le decalage : la premiere note, pile sur un pas (tout recule de moins d'un pas ; ca ne s'entend pas)
-  const double dec = (double)on[0] - c * (double)(int)((double)on[0] / c);
-  *decale = (uint32_t)(dec + 0.5);
-  const double nf = ((double)lg - dec) / c;
-  const int nMin = (int)(((double)on[n - 1] - dec) / c + 0.5) + 1;   // (la derniere note y tient)
-  // (parmi les comptes reguliers entre la derniere note et la fin, le plus regulier : un multiple de 8, puis de
-  // 4, de 6, de 3 ; a egalite, le plus long)
-  int nReg = -1, scoreReg = 0;
-  for (int k = (int)(nf + 0.5); k >= nMin && k >= 2 && nf - k <= 1.6; k--) {
-    const int sc = k % 8 == 0 ? 4 : k % 4 == 0 ? 3 : k % 6 == 0 ? 2 : k % 3 == 0 ? 1 : 0;
-    if (sc > scoreReg) { scoreReg = sc; nReg = k; }
-  }
-  int nbPas = nReg > 0 && nf - nReg <= 1.6 ? nReg : ((int)(nf + 0.5) > nMin ? (int)(nf + 0.5) : nMin);
-  while (nbPas > 64) { c *= 2.0; nbPas = (nbPas + 1) / 2; }
-  if (nbPas < 1) nbPas = 1;
-  *unite = (uint32_t)(c + 0.5);
-  *nb = nbPas;
-}
 // UNE LEGERE QUANTIFICATION : les notes de la prise (a partir de l'evenement de), chacune la moitie du chemin
 // vers son pas ; sa fin bouge d'autant (sa duree reste). RETIREE pour l'instant (elle deformait les rythmes
 // joues, quand le pas trouve n'etait pas le leur) : a affiner, elle n'est plus appelee.
@@ -846,7 +786,11 @@ static void loopNote(int note, int ins, bool on) {
   if ((g_loopEtat != 1 && g_loopEtat != 3) || g_loopN >= kLoopMax) return;
   const uint32_t d = fm1_echantillons() - g_loopT0;
   LoopNote &e = g_loop[g_loopN];
-  e.t = g_loopEtat == 1 ? d : d % loopLgLigne(g_loopCouche % kLoopVoies);   // (la longueur de sa rangee)
+  if (g_loopEtat == 1) e.t = d;
+  else {                                          // OVERDUB : au 1/16 le plus proche, comme SLOOP (sa fin : telle quelle)
+    const uint32_t lgR = loopLgLigne(g_loopCouche % kLoopVoies), u = g_loopUnite ? g_loopUnite : 1u, p = d % lgR;
+    e.t = on ? ((p + u / 2u) / u * u) % lgR : p;
+  }
   e.note = (uint8_t)note; e.ins = (uint8_t)ins; e.on = on; e.couche = (uint8_t)g_loopCouche;
   g_loopN = g_loopN + 1;
 }
@@ -4008,20 +3952,16 @@ int main(void) {
             vu = fait;
           }
         }
-        if (fm1_looper() && tenu && maintenant - tenuDepuis > sec / 2u && g_loopEtat != 5 && g_loopEtat != 0) {
+        // REC tenu deux secondes : toute la boucle s'efface (comme SLOOP) ; une nouvelle prise repart de zero
+        (void)prochain;
+        if (fm1_looper() && tenu && maintenant - tenuDepuis > 2u * sec && g_loopEtat != 0) {
           if (!efface) {
             efface = true;
-            prochain = maintenant;
-            if (loopRecAvant == 0 && g_loopEtat == 1) loopEfface();        // (une prise juste lancee : rien)
-            else if (loopRecAvant == 4) { g_loopEtat = 4; loopSilence(); }
-            else if (g_loopEtat == 3) g_loopEtat = 2;
-          }
-          if ((int32_t)(maintenant - prochain) >= 0) {
-            prochain += sec / 5u;
-            fm1_annonce2("LOOPER", loopEnleveDerniere() ? "REMOVED" : "EMPTY");
+            loopEfface();
+            fm1_annonce2("LOOPER", "CLEARED");
             modifie = true;
           }
-        } else efface = false;
+        } else if (!tenu) efface = false;
       }
       const int recAppuis = fm1_rec_appuis();
       if (recAppuis && fm1_looper() && !recEtat) {  // LOOPER : REC, comme la pedale
@@ -4032,11 +3972,11 @@ int main(void) {
           g_loopDebutPrise = g_loopN;
           loopCibleL = g_loopCouche % kLoopVoies;      // (les molettes : ce qu'on enregistre)
           fm1_annonce2("LOOPER", "OVERDUB");
-        } else if (g_loopEtat == 0) {              // vide : une boucle neuve, apres le decompte (plus bas)
+        } else if (g_loopEtat == 0) {              // vide : REC arme, la prise part de la premiere note (comme SLOOP)
           loopSilence();
-          g_loopN = 0; g_loopCouche = 0; g_loopMuet = 0; g_loopOct = 0; g_loopT0 = maintenant; g_loopEtat = 5;
+          g_loopN = 0; g_loopCouche = 0; g_loopMuet = 0; g_loopOct = 0; g_loopT0 = maintenant; g_loopEtat = 1;
           loopCibleL = 0;
-          fm1_annonce2("1", 0);
+          fm1_annonce2("LOOPER", "PLAY A NOTE");
         } else if (g_loopEtat == 5) {              // (REC pendant le decompte : abandonne)
           g_loopEtat = 0;
           fm1_annonce2("LOOPER", "CANCELLED");
@@ -4049,24 +3989,76 @@ int main(void) {
             e.note = d.note; e.ins = d.ins; e.couche = d.couche; e.on = 0; e.t = lg - 1u;
             g_loopN = g_loopN + 1;
           }
-          {                                        // cale la boucle sur ce qu'on a joue (loopDetecte)
-            uint32_t u, dec; int nb;
-            loopDetecte(lg, &u, &nb, &dec);
-            g_loopUnite = u; g_loopPasG = nb;
-            for (int rr = 0; rr < 6; rr++) g_loopPasL[rr] = (uint8_t)nb;
-            lg = u * (uint32_t)nb;
-            for (int i = 0; i < g_loopN; i++) {    // (tout recule du decalage ; une fin de note au-dela : au bout)
-              LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
-              e.t = e.t > dec ? e.t - dec : 0u;
-              if (e.t >= lg) e.t = lg - 1u;
+          // LA BOUCLE FERMEE, comme la prise libre de SLOOP (isod89, sloop-fm1 : firmware/src/seq.c ft_close,
+          // ft_fit ; GPL-3.0-only), simplifiee et adaptee : la boucle va de la PREMIERE NOTE a cet appui, qui
+          // est le premier temps du tour suivant (la lecture repart d'ici, sans a-coup) ; sa duree : 1, 2 ou 4
+          // mesures, au tempo le plus proche de celui du morceau (a 3 % pres, celui-la, juste) ; les
+          // notes au 1/16 le plus proche, leurs durees aussi.
+          {
+            const uint32_t fs = fm1_echantillons_par_seconde();
+            uint32_t t1 = 0xFFFFFFFFu;
+            for (int i = 0; i < g_loopN; i++)
+              if (fm1_opaque(g_loop[(int)fm1_opaque((uint32_t)i)].on) == 1u && g_loop[(int)fm1_opaque((uint32_t)i)].t < t1)
+                t1 = g_loop[(int)fm1_opaque((uint32_t)i)].t;
+            const uint32_t fin = lg;                     // (cet appui, depuis la fin du decompte)
+            const uint32_t T = t1 != 0xFFFFFFFFu && fin > t1 ? fin - t1 : 0u;
+            int mesures = 0;
+            const double bpmMorceau = md_replayer_get_bpm();
+            const uint32_t ref = bpmMorceau >= 40.0 && bpmMorceau <= 240.0 ? (uint32_t)(bpmMorceau + 0.5) : 120u;
+            uint32_t L = 0, bpm = ref;
+            if (T >= fs / 2u) {                          // (le nombre de mesures au tempo le plus proche du morceau, 40 a 240)
+              static const int kMes[3] = { 1, 2, 4 };
+              uint32_t err = 0xFFFFFFFFu;
+              for (int k = 0; k < 3; k++) {
+                const uint32_t b = (uint32_t)((uint64_t)kMes[k] * 240u * fs * 10u / T);   // (BPM x 10)
+                if (b < 400u || b > 2400u) continue;
+                const uint32_t e = b > ref * 10u ? b * 100u / ref : ref * 10000u / b;   // (le rapport, x 1000)
+                if (e < err) { err = e; mesures = kMes[k]; bpm = (b + 5u) / 10u; }
+              }
+              if (mesures) {
+                const uint32_t juste = (uint32_t)((uint64_t)mesures * 240u * fs / ref);   // (le tempo du morceau, pile)
+                const bool garde = err <= 1030u;
+                L = garde ? juste : T;
+                if (garde) bpm = ref;
+              }
+            }
+            if (!mesures) {                              // (rien de joue, ou trop court : rien ne change)
+              loopEfface();
+              fm1_annonce2("LOOPER", "EMPTY");
+            } else {
+              const uint32_t pas = 16u * (uint32_t)mesures, u = L / pas;
+              L = u * pas;
+              static int32_t idxOn[kLoopVoies];
+              static uint32_t relOn[kLoopVoies];
+              for (int r = 0; r < kLoopVoies; r++) idxOn[r] = -1;
+              for (int i = 0; i < g_loopN; i++) {
+                LoopNote &e = g_loop[(int)fm1_opaque((uint32_t)i)];
+                const int rg = (int)fm1_opaque(e.couche) % kLoopVoies;
+                const uint32_t rel = e.t > t1 ? e.t - t1 : 0u;
+                const uint32_t o = fm1_opaque(e.on);
+                if (o == 1u || o == 2u) {                // une note : au 1/16 le plus proche (juste avant la fin : le debut)
+                  const uint32_t k = (uint32_t)(((uint64_t)rel * pas * 2u + T) / (2u * T)) % pas;
+                  e.t = k * u;
+                  idxOn[rg] = (int32_t)k; relOn[rg] = rel;
+                } else if (idxOn[rg] >= 0) {             // sa fin : sa duree, en 1/16 (un au moins)
+                  const uint32_t d = rel > relOn[rg] ? rel - relOn[rg] : 0u;
+                  uint32_t sd = (uint32_t)(((uint64_t)d * pas * 2u + T) / (2u * T));
+                  if (sd < 1u) sd = 1u;
+                  const uint32_t f = (uint32_t)idxOn[rg] + sd;
+                  e.t = f >= pas ? L - 1u : f * u - 1u;
+                  idxOn[rg] = -1;
+                } else e.t = 0;
+              }
+              g_loopUnite = u; g_loopPasG = (int)pas;
+              for (int rr = 0; rr < 6; rr++) g_loopPasL[rr] = (uint8_t)pas;
+              g_loopLg = L;
+              g_loopT0 = maintenant;                     // (cet appui : le premier temps)
+              loopRepart(); g_loopEtat = 2;
+              char l2[20];
+              siprintf(l2, "%d BAR%s %u BPM", mesures, mesures > 1 ? "S" : "", (unsigned)bpm);
+              fm1_annonce2("LOOP", l2);
             }
           }
-          g_loopLg = lg;
-          loopRepart(); g_loopEtat = 2;
-          char l2[20];
-          const uint32_t cs = lg / (fm1_echantillons_par_seconde() / 100u);
-          siprintf(l2, "%u.%02u S", (unsigned)(cs / 100u), (unsigned)(cs % 100u));
-          fm1_annonce2("LOOP", l2);
         } else if (g_loopEtat == 2) {              // OVERDUB : une couche de plus
           g_loopCouche++; g_loopEtat = 3;
           g_loopDebutPrise = g_loopN;
@@ -6895,7 +6887,7 @@ int main(void) {
         { "GLO > KEYBOARD", "normal keyboard\n\nPRESETS: change track" },
         { "GLO > DRUM KEYBOARD", "a drum on each key\n\nOCT-/OCT+: octave" },
         { "SEQ > DRUM MACHINE", "BLACK KEYS: sound\nWHITE KEYS: steps\nPLAY: start/stop\nOCT-/OCT+: octave\n\nin the tracker:\nREC: copy pattern" },
-        { "SEQ > LOOPER", "REC: count-in, record\nREC: close the loop\nREC: overdub on/off\nPLAY: stop/start\nREC held: remove notes\n\nSELECT: preset\nOCT-/OCT+: loop octave" },
+        { "SEQ > LOOPER", "REC: arm, the first note\nrecords\nREC: close the loop\n(1, 2 or 4 bars)\nREC: overdub on/off\nPLAY: stop/start\nREC held 2 s: clear all\n\nSELECT: preset\nOCT-/OCT+: loop octave" },
         { "D-PAD > LOOPER", "ARROWS: move\nA: set/unset a note\nA+LEFT/RIGHT: note -1/+1\nA+UP/DOWN: octave -/+\n\non a layer number:\nA+B: remove the layer\nA: put it back\n\nRM LAST, CLR ALL: A\nSTEP: A+LEFT/RIGHT\n(all the loop)\nSTP/CUR: A+LEFT/RIGHT\n(the cursor's layer ; there,\nOP4..MONO keys pick it)" },
         { "HOME > SONG", "one chain per row\n\nSEL+RIGHT: chain\nSEL+UP: project\nSEL+DOWN: drums" },
         { "SONG > CHAIN", "phrases + transpose\n\nSEL+RIGHT: phrase\nSEL+LEFT: song" },

@@ -57,7 +57,8 @@ OPLBend Tracker is free. If you'd like to support its development, you can:
 ## Credits and licence
 
 GPL-3.0 (`LICENSE`). By Audren. Built on [Felucca](https://github.com/hugelton/Felucca)
-by Leo Kuroshita (@kurogedelic), Hügelton Instruments. The `.A2M` format and the instrument presets come from
+by Leo Kuroshita (@kurogedelic), Hügelton Instruments. The looper's recording (the free take) is adapted from
+[SLOOP](https://github.com/isod89/sloop-fm1) by isod89 (GPL-3.0). The `.A2M` format and the instrument presets come from
 [AdLib Tracker II](https://www.adlibtracker.net). The package holds three JieLi AC79 SDK files (Apache-2.0). Font: IBM Plex Mono (SIL OFL 1.1).
 M-VAVE and FM-1 are trademarks of their respective owners; this project is not affiliated with M-VAVE.
 
