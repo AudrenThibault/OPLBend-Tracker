@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """L'ecran d'accueil du FM-1 : une puce OPL3 (YMF262) rafistolee, du scotch dessus, des fils soudes
-(le circuit bending), le nom du tracker et la version. Dessine ici, 240 x 240, 256 couleurs.
+(le circuit bending), devant les lignes du tracker ; le chat de CIRCUIT BENDING (tools/anims.py) qui
+depasse du bandeau ; le nom du tracker et la version. (L'ancienne image : tools/splash_ancien.py.) Dessine ici, 240 x 240, 256 couleurs.
   splash.py SORTIE.h [VERSION]   l'image pour le firmware (palette RGB565 + indices)
   splash.py --png FICHIER.png    l'image seule, pour la voir
+  splash.py --site DOSSIER       pour le site : DOSSIER/splash.png (la capture, x2) et DOSSIER/og-image.png
+                                 (960 x 960, l'ecran d'accueil seul : l'apercu des liens partages)
 Besoin de Pillow."""
 import math
 import random
@@ -82,16 +85,24 @@ def dessine(version="", t=None):
     img = Image.new("RGBA", (L * X, L * X), (0, 0, 0, 255))
     d = ImageDraw.Draw(img)
     r = random.Random(262)
-    # le circuit : vert sombre, des pistes de cuivre
+    # derriere : les lignes du tracker, comme la page SONG (les numeros, les chaines, les traits de couleur
+    # des pistes), assombries pour que la puce ressorte
     d.rectangle([0, 0, L * X, L * X], fill=t["pcb"])
-    for k in range(26):
-        y = r.randint(0, 165) * X
-        x0 = r.randint(-20, 200) * X
-        x1 = x0 + r.randint(30, 120) * X
-        d.line([(x0, y), (x1, y), (x1 + 12 * X, y + 12 * X)], fill=t["piste"], width=2 * X)
-        d.ellipse([x1 + 10 * X, y + 10 * X, x1 + 16 * X, y + 16 * X], outline=t["pastille"], width=X)
-    img = img.filter(ImageFilter.GaussianBlur(X))
-    d = ImageDraw.Draw(img)
+    f = police(13)
+    pas_y, x0, larg = 13, 6, 46
+    fonce = lambda c, k=0.68: tuple(int(v * k + b * (1 - k)) for v, b in zip(c, t["pcb"]))
+    d.text((x0 * X, 0), "SONG", font=police(8), fill=fonce((76, 157, 255)))
+    for c in range(4):
+        d.text(((x0 + 36 + c * larg) * X, 0), "%02d" % (c + 1), font=police(8), fill=fonce((76, 157, 255)))
+        xs = (x0 + 30 + c * larg) * X
+        d.line([(xs, 10 * X), (xs, 166 * X)], fill=fonce(FILS_THEME[c], 0.75), width=X)
+    for i in range(12):
+        y = (10 + i * pas_y) * X
+        d.text((x0 * X, y), "%02X" % i, font=f, fill=fonce((176, 140, 255) if i % 4 else (255, 111, 184)))
+        for c in range(4):
+            v = r.random()
+            txt, coul = ("--", (110, 90, 140)) if v < 0.3 else ("%02X" % r.randint(0, 15), (240, 236, 250))
+            d.text(((x0 + 34 + c * larg) * X, y), txt, font=f, fill=fonce(coul))
 
     # la puce : un boitier DIP noir, 2 x 12 pattes, un peu de travers
     puce = Image.new("RGBA", (150 * X, 96 * X), (0, 0, 0, 0))
@@ -138,6 +149,17 @@ def dessine(version="", t=None):
     scotch(img, 205, 40, 52, 16, 62, 3)
     d = ImageDraw.Draw(img)
 
+    # le chat de CIRCUIT BENDING, le meme dessin que son animation (tools/anims.py), avec de la place au-dessus
+    # pour ses oreilles ; il depasse du bandeau, a droite
+    sys.path.insert(0, str(ICI / "tools"))
+    import anims
+    chat = anims.chat(0.0, haut=14).convert("RGBA")
+    fond = chat.getpixel((0, 0))
+    chat.putdata([(0, 0, 0, 0) if px == fond else px for px in chat.getdata()])
+    chat = chat.resize((chat.width * X, chat.height * X), Image.NEAREST)
+    img.alpha_composite(chat, (158 * X, 99 * X))
+    d = ImageDraw.Draw(img)
+
     # le nom, et la version
     def centre(y, s, t, coul, ombre=True):
         f = police(t)
@@ -177,7 +199,19 @@ def en_tete(img, sortie, version):
     Path(sortie).write_text("\n".join(lignes) + "\n")
 
 
+def site(dossier, version="V0.2"):
+    """la capture de l'ecran d'accueil (x2, pixels nets) et l'apercu des liens partages (x4)"""
+    dossier = Path(dossier)
+    img = dessine(version)
+    img.resize((480, 480), Image.NEAREST).save(dossier / "splash.png", optimize=True)
+    og = img.resize((960, 960), Image.NEAREST)  # (l'ecran d'accueil seul)
+    og.save(dossier / "og-image.png", optimize=True)
+
+
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--site":
+        site(sys.argv[2])
+        return
     if len(sys.argv) >= 3 and sys.argv[1] == "--png":
         dessine(sys.argv[3] if len(sys.argv) > 3 else "V0.2").save(sys.argv[2])
         return

@@ -16,12 +16,13 @@ from PIL import Image, ImageDraw
 L, H = 80, 60
 
 
-def chat(t):
-    """t de 0 a 1 : la tete monte, descend et penche ; les yeux clignent une fois"""
-    im = Image.new("RGB", (L, H), (24, 22, 30))
+def chat(t, haut=0):
+    """t de 0 a 1 : la tete monte, descend et penche ; les yeux clignent une fois. (haut : de la place en plus
+    au-dessus, pour que ses oreilles tiennent en entier : l'ecran d'accueil, tools/splash.py)"""
+    im = Image.new("RGB", (L, H + haut), (24, 22, 30))
     d = ImageDraw.Draw(im)
     a = math.sin(t * 2 * math.pi)
-    cx, cy = 40 + int(4 * math.sin(t * 4 * math.pi)), 40 + int(7 * a)
+    cx, cy = 40 + int(4 * math.sin(t * 4 * math.pi)), 40 + haut + int(7 * a)
     r = 34 + int(3 * math.cos(t * 2 * math.pi))      # (trop pres : il deborde, s'approche et recule)
     creme, rose, gris = (236, 226, 210), (232, 160, 170), (70, 64, 70)
     for sx in (-1, 1):                                # les oreilles
