@@ -1,6 +1,6 @@
 # OPLBend Tracker
 
-A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum machine and a looper, for the **M-VAVE FM-1**.
+A free OPL3-style FM tracker firmware, with FX inspired by circuit bending, a drum machine and a looper, for the **M-VAVE FM-1**.
 
 **[Website and web installer →](https://mazmusique.fr/oplbendtracker/)**
 
@@ -64,5 +64,5 @@ M-VAVE and FM-1 are trademarks of their respective owners; this project is not a
 
 ---
 
-**FR** — Un firmware tracker FM OPL3 gratuit, avec des effets inspirés du circuit bending, une boîte à rythmes et un looper, pour le M-VAVE FM-1. Nous conseillons d'installer d'abord
+**FR** — Un firmware tracker FM de style OPL3, gratuit, avec des effets inspirés du circuit bending, une boîte à rythmes et un looper, pour le M-VAVE FM-1. Nous conseillons d'installer d'abord
 la V15 officielle sur le FM-1 ; ensuite, installe-le depuis le [site](https://mazmusique.fr/oplbendtracker/) (Chrome ou Edge).
