@@ -4,7 +4,7 @@ A free OPL3 FM tracker firmware, with FX inspired by circuit bending, a drum mac
 
 **[Website and web installer →](https://mazmusique.fr/oplbendtracker/)**
 
-- LSDJ-style tracker (SONG, CHAIN, PHRASE, INSTR, TABLE) on a software OPL3 (YMF262) FM engine, 18 voices
+- LSDJ-style tracker (SONG, CHAIN, PHRASE, INSTR, TABLE) on an OPL3-style FM engine (not cycle-accurate): 18 voices, 8 waveforms, stereo
 - FX inspired by circuit bending, GLITCH, MASTER FX, KNOB GENERAL, drum machine, drum keyboard, looper
 - Opens and exports AdLib Tracker II `.A2M` songs, which also open in AMBER OPL Tracker and my other OPL3 trackers
 - USB audio into your DAW
