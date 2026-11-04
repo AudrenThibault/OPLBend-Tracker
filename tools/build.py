@@ -49,7 +49,7 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_800"                # package identity; release builds are FM-1_8XY
+PRODUCT = "FM-1_801"                # package identity; release builds are FM-1_8XY
 VERSION = None                      # TK_VERSION for release builds (default: firmware/src/tracker.c)
 
 
