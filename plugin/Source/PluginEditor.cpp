@@ -548,15 +548,6 @@ void OPLBendEditor::timerCallback()
         wanted = "LINK off in Live";
     statusLabel.setText (wanted, juce::dontSendNotification);
 
-    {                                                  // (DIAG LINK, temporary)
-        static juce::String lastDiag;
-        const auto diag = machine.linkDiagnostic();
-        if (diag != lastDiag)
-        {
-            lastDiag = diag;
-            juce::File ("~/Library/Logs/OPLBend-link.log").appendText (juce::Time::getCurrentTime().toString (false, true, true, true) + " " + diag + "\n");
-        }
-    }
 
     if (choosing)
         return;

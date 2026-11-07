@@ -127,18 +127,6 @@ int Machine::getLatencySamples() const noexcept
     return juce::roundToInt (latencyFrames / ratio);
 }
 
-juce::String Machine::linkDiagnostic() const
-{
-    const auto state = link->captureAppSessionState();
-    return "peers=" + juce::String ((int) link->numPeers()) + " linkEnabled=" + juce::String ((int) link->isEnabled())
-         + " startStopSync=" + juce::String ((int) link->isStartStopSyncEnabled())
-         + " sessionPlaying=" + juce::String ((int) state.isPlaying()) + " sessionTempo=" + juce::String (state.tempo(), 3)
-         + " tempoMaster=" + juce::String (tempoMaster.load()) + " trackerPlaying=" + juce::String ((int) diagTrackerPlaying.load())
-         + " hostPlaying=" + juce::String ((int) diagHostPlaying.load()) + " startEdges=" + juce::String (diagStarts.load())
-         + " lastEdge=" + juce::String (diagLastStart.load()) + " sent=" + juce::String (diagSent.load())
-         + " sentPlaying=" + juce::String (diagSentPlaying.load());
-}
-
 int Machine::getLinkPeers() const
 {
     return (int) link->numPeers();
@@ -401,13 +389,6 @@ void Machine::leadHost()
 
     // (the session's tempo, looked at now and then: a peer joining may bring its own)
     const auto look = leads && (std::abs (bpm - publishedBpm) > 0.0005 || ++sinceLinkLook >= 32);
-    diagHostPlaying = hostPlaying;                     // (DIAG LINK)
-    diagTrackerPlaying = trackerPlaying;
-    if (start != 0)
-    {
-        diagLastStart = start;
-        ++diagStarts;
-    }
     if (! look && (start == 0 || link->numPeers() == 0))
         return;
     sinceLinkLook = 0;
@@ -435,11 +416,6 @@ void Machine::leadHost()
         state.setIsPlaying (false, now);
     }
     link->commitAppSessionState (state);
-    if (newStart)                                      // (DIAG LINK)
-    {
-        diagSentPlaying = start > 0 ? 1 : 0;
-        ++diagSent;
-    }
 }
 
 void Machine::run()

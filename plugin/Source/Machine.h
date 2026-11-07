@@ -38,7 +38,6 @@ public:
     double getSongBpm() const noexcept { return songBpm.load(); } // the song's own tempo
     int getUnderruns() const noexcept { return underruns.load(); }
     juce::String getError() const;
-    juce::String linkDiagnostic() const;               // (DIAG LINK, temporary)
 
     // A new frame since `seenVersion`? Copies the RGBA screen and the LED levels.
     bool copyScreen (juce::uint8* rgba, juce::uint8* leds, juce::uint32& seenVersion);
@@ -105,8 +104,6 @@ private:
     int sinceLinkLook = 0;
     std::atomic<double> lateMs { 0.0 }, songBpm { 0.0 };
     std::unique_ptr<ableton::Link> link;
-    std::atomic<int> diagStarts { 0 }, diagLastStart { 0 }, diagSent { 0 }, diagSentPlaying { 0 };   // (DIAG LINK)
-    std::atomic<bool> diagHostPlaying { false }, diagTrackerPlaying { false };
 
     // Resampler state (audio thread).
     static constexpr int scratchSize = 256;
