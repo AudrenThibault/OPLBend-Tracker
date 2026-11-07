@@ -341,6 +341,9 @@ struct fm1_fichier {
     int32_t bloc_en_cache;
     uint8_t *bloc;                                /* lecture : le bloc decompresse ; ecriture : le bloc en cours */
     const uint8_t *rom;                           /* un morceau livre avec le firmware (sinon 0 : la flash) */
+#ifdef FM1_HOST
+    const uint8_t *mac;                           /* le plugin : un fichier du Mac, tel quel (MAC/...) */
+#endif
     /* ecriture */
     uint32_t premier, sect_max, ecrit, efface;    /* efface : secteurs deja effaces */
     uint32_t *table, nb_blocs, cap_table;
@@ -397,6 +400,15 @@ FILE *fopen(const char *chemin, const char *mode)
         f->mode = F_PUITS;
         return f;
     }
+#ifdef FM1_HOST
+    if (!strncasecmp(nom, "MAC/", 4)) {           /* le plugin : le fichier choisi sur le Mac (PROJECT > LOAD) */
+        if (mode[0] != 'r' || !(f->mac = fm1_host_mac_file(nom + 4, &f->taille)) ||
+            !(f->bloc = (uint8_t *)malloc(FS_BLOC)))
+            return 0;
+        f->mode = F_LECTURE;
+        return f;
+    }
+#endif
     if (mode[0] == 'r' && (!flash_ok || fs_cherche(nom) < 0) && rom_cherche(nom) >= 0) {
         const int k = rom_cherche(nom);             /* un morceau livre avec le firmware */
         f->bloc = (uint8_t *)malloc(FS_BLOC);
@@ -575,6 +587,14 @@ static int fs_charge_bloc(struct fm1_fichier *f, uint32_t k)
     uint32_t a[2], n;
     if ((int32_t)k == f->bloc_en_cache)
         return 0;
+#ifdef FM1_HOST
+    if (f->mac) {                                 /* (un fichier du Mac : en clair) */
+        n = f->taille - k * FS_BLOC;
+        memcpy(f->bloc, f->mac + k * FS_BLOC, n < FS_BLOC ? n : FS_BLOC);
+        f->bloc_en_cache = (int32_t)k;
+        return 0;
+    }
+#endif
     if (f->rom) {                                 /* (un morceau livre avec le firmware : deja en memoire) */
         memcpy(a, f->rom + f->index + k * 4u, sizeof a);
         if (a[1] < a[0] || a[1] - a[0] > FS_COMP_MAX)
@@ -920,3 +940,20 @@ static int fs_entree(uint32_t n, uint8_t *o)      /* la n-ieme entree : taille(4
     }
     return -1;
 }
+
+#ifdef FM1_HOST
+/* Le plugin : un fichier tel qu'il est sur la flash (un .OBT compresse, comme sur le Mac), pour SAVE (amber/main.cpp) */
+uint32_t fm1_fs_lit_brut(const char *chemin, uint8_t *d, uint32_t max)
+{
+    FILE *f;
+    uint32_t n;
+    fs_brut = 1;
+    f = fopen(chemin, "rb");
+    fs_brut = 0;
+    if (!f)
+        return 0;
+    n = (uint32_t)fread(d, 1, max, f);
+    fclose(f);
+    return n;
+}
+#endif

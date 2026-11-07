@@ -6,7 +6,12 @@
 #define HALF_FRAMES 128u          /* I2S half buffer, 2.9 ms */
 #define CTL 16u                   /* audio block: the sequencer's ticks fall on block boundaries (0.36 ms) */
 
+#ifdef FM1_HOST
+static uint32_t fm1_host_ms(void);
+#define fm1_ms fm1_host_ms()      /* (the plugin: the audio rendered, tracker/plugin/native/fm1_host.c) */
+#else
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER5 ISR, main.c) */
+#endif
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* a ring slot stored before its index moves */
 /* Bit `n` of `v` as 0 or 1, opaque to the compiler: it cannot turn « bit ? mask : 0 » into sextra, a
    signed bit-field extract that the web emulator (the online one) runs as unsigned. Costs nothing. */
@@ -14,7 +19,12 @@ static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER5 ISR, main.c
 static inline uint32_t web_bit(uint32_t v, uint32_t n) { return fm1_opaque((v >> n) & 1u); }
 
 #define BOOTGUARD_MAGIC 0x42475244u
+#ifndef FM1_HOST
 struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+#define FM1_POOL __attribute__((section(".pool")))   /* (app.ld: zeroed by crt, apart from .bss) */
+#else
+#define FM1_POOL                  /* (the plugin: no linker script of ours) */
+#endif
 
 static volatile uint8_t master_vol = 200;   /* the MASTER pot, 0..255 (master_poll) */
 static uint8_t fm1_tone = 1;                 /* output filter: 0 OFF, 1 SOFT, 2 WARM, 3 DARK (outstage.c) */

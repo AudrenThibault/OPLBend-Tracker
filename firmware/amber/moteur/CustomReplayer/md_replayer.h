@@ -774,6 +774,14 @@ void md_replayer_set_bpm(double bpm);
 // Démarre l'horloge du séquenceur : le timer 0 de l'ARM9, qui fait tourner le
 // moteur sous interruption. À appeler une fois, après md_replayer_init().
 void md_replayer_ds_demarre(void);
+#ifdef FM1_HOST
+// Le plugin (tracker/plugin) : la position du morceau en lignes, pour la caler sur l'hote.
+bool md_replayer_host_joue_song(void);       // le morceau entier joue (pas un chain ni une phrase)
+int md_replayer_host_vitesse(void);          // ticks par ligne de tempo (la vitesse de depart)
+int md_replayer_host_lignes_par_temps(void); // les lignes d'un temps de l'hote (pas plus de 200 BPM)
+double md_replayer_host_prochain(void);      // la position du prochain tick
+double md_replayer_host_cherche(double lignes);   // relance, lu sans le son jusque-la ; rend le prochain tick
+#endif
 
 // ── SONG ────────────────────────────────────────────────────────────────
 // Numéro de chain posé sur (canal, ligne). MD_EMPTY = case vide.

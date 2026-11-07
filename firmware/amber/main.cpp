@@ -211,6 +211,7 @@ extern "C" void fm1_page_presets(int on);          // sur la page PRESET : PRESE
 extern "C" void fm1_select_preset(int on);         // sur la page PRESET : SELECT aussi (pas le tempo)
 extern "C" int fm1_looper(void);                   // le mode LOOPER (SEQ, troisieme mode)
 extern "C" void fm1_mode_tracker(void);            // SEQ en TRACKER (un morceau charge)
+extern "C" void fm1_ecran_tout(void);              // tout l'ecran renvoye (une autre page)
 extern "C" void fm1_led_clignote(uint32_t touches); // des touches du clavier qui clignotent
 extern "C" int fm1_drumkeys(void);                 // le mode DRUM KEYBOARD (GLO, troisieme mode)
 extern "C" int fm1_rec_tenu(void);                 // REC tenu (LOOPER : il efface, note par note)
@@ -228,6 +229,14 @@ extern "C" void fm1_edit_clignote(int on);         // EDIT clignote (des molette
 extern "C" void fm1_suivre_lecture(int on);        // la vue suit le repere de lecture
 extern "C" void fm1_vu_chevron(int i);             // un point du repere de lecture
 extern "C" void fm1_ecran_chargement(void);        // « LOADING... », envoye tout de suite a l'afficheur
+#ifdef FM1_HOST
+extern "C" void fm1_host_mac_demande(void);        // le plugin : PROJECT > LOAD ouvre les fichiers du Mac (tracker/plugin)
+extern "C" uint32_t fm1_fs_lit_brut(const char *chemin, uint8_t *d, uint32_t max);   // le fichier tel que sur la flash
+extern "C" void fm1_host_mac_sauve(const char *nom, const uint8_t *data, uint32_t n);   // le plugin : SAVE le propose au Mac
+extern "C" int fm1_host_mac_arrive(char *nom, int max);   // le morceau choisi la-bas, a lire dans /MAC
+extern "C" int fm1_host_lecture(void);             // l'hote (Ableton) lance (+1) ou arrete (-1) le morceau
+extern "C" void fm1_host_start(int joue);          // START vient de lancer (1) ou d'arreter (0) le morceau
+#endif
 extern "C" void fm1_ecran_attente(const char *mot); // ... un autre mot (« EXPORTING... »)
 extern "C" bool fm1_exporte_a2m(const char *chemin, char *msg, int cap);   // EXPORT A2M (compat/fm1_a2m_export.c)
 extern "C" bool fm1_morceau_tient_en_a2m(void);    // rien de ce qu'AT2 ne connait (SAVE en .A2M)
@@ -2218,6 +2227,14 @@ int main(void) {
     if (enregistre(nom)) {
       siprintf(e, "ENREGISTRE : %s", dernierNom);
       siprintf(msgProjet, "SAVED %s", nomProjet);
+#ifdef FM1_HOST
+      // Le plugin : le morceau enregistre est aussi propose au Mac (sa fenetre d'enregistrement).
+      {
+        static uint8_t tampon[1 << 20];
+        const char *base = strrchr(dernierNom, '/');
+        fm1_host_mac_sauve(base ? base + 1 : dernierNom, tampon, fm1_fs_lit_brut(dernierNom, tampon, sizeof tampon));
+      }
+#endif
     } else {
       siprintf(e, "ECHEC DE L'ENREGISTREMENT");
       strcpy(msgProjet, "SAVE FAILED");
@@ -2827,6 +2844,43 @@ int main(void) {
 #endif
     int appui = keysDownRepeat();
     int frappe = keysDown();
+#ifdef FM1_HOST
+    // Le plugin : le morceau choisi sur le Mac (PROJECT > LOAD) s'ouvre comme depuis la liste, seul dans /MAC ;
+    // sans choix, la liste des morceaux enregistres dans le projet, s'il y en a.
+    if (!navigateur && !dialogueNom && !demandeNouveau && !dialogueMidi && !demandeBpm && !demandeSuppr) {
+      const int mac = fm1_host_mac_arrive(fichiers[0], sizeof fichiers[0]);
+      if (mac) {
+        page = PAGE_PROJECT; pageRetour = PAGE_PROJECT; pageVue = -1;
+        navGenre = 0; navSuppr = false;
+      }
+      if (mac == 1) {
+        strcpy(dossier, "/MAC");
+        nbFichiers = 1; selFichier = 0; typeFic[0] = 1;
+        navigateur = true;
+        appui = 0; frappe = KEY_A;
+      } else if (mac == 2 && carteOK) {
+        creeSiAbsent(dossierSongs);
+        strcpy(dossier, dossierSongs);
+        scanne();
+        for (int i = 0; i < nbFichiers; i++) navigateur = navigateur || typeFic[i] == 1;
+      }
+    }
+    // Le plugin : la lecture de l'hote lance le morceau entier (sa position, compat/fm1_plateforme.c), et
+    // l'arrete.
+    if (const int lecture = recEtat ? 0 : fm1_host_lecture()) {
+      if (lecture > 0 && !md_replayer_host_joue_song()) {
+        md_replayer_set_play_scope(MD_SCOPE_SONG, 0, 0);
+        md_replayer_play_from(0);
+        md_replayer_play();
+        enLecture = true;
+        suiviLecture = true;
+        lectureScope = 0;
+      } else if (lecture < 0 && enLecture) {
+        md_replayer_stop();
+        enLecture = false;
+      }
+    }
+#endif
     // Les fenetres ouvertes au debut de l'image : si l'une se ferme
     // pendant celle-ci, le A (ou le B) qui l'a fermee ne doit pas agir en
     // plus sur la page d'arrivee. Sans ca, ouvrir un morceau dans le
@@ -3052,9 +3106,15 @@ int main(void) {
     };
 
     // ── HOME : retour a SONG, depuis n'importe quelle page ─────────────────
-    if (fm1_home_appuis() && !navigateur && !dialogueNom && !dialogueMidi && page != PAGE_SONG) {
+    // ... et de n'importe quelle fenetre (SAVE, le navigateur, le MIDI, une question) : elle se ferme sans
+    // rien ecrire, comme avec B. Sinon un SAVE appuye par megarde bloquait qui ne connait pas le D-PAD.
+    if (fm1_home_appuis()) {
+      const bool fenetre = navigateur || dialogueNom || dialogueMidi || demandeBpm || demandeSuppr || demandeNouveau;
+      navigateur = false; navSuppr = false; demandeSuppr = false;
+      dialogueNom = false; dialogueMidi = false; demandeBpm = false;
       demandeNouveau = false;                      // (une question en suspens : « non »)
-      page = PAGE_SONG; pageVue = -1;
+      saveRetour = false;
+      if (fenetre || page != PAGE_SONG) { page = PAGE_SONG; pageVue = -1; }
     }
 
     // ── SAVE : la sauvegarde, comme SAVE dans PROJECT ──────────────────────
@@ -3077,8 +3137,7 @@ int main(void) {
     // jouer quand on la quitte : le tracker peut alors partir avec elle.
     if (fm1_drum() != drumMode) {
       drumMode = fm1_drum();
-      if (drumMode) { drumPrepare(); drumAvant = page == PAGE_DRUM ? PAGE_SONG : page; page = PAGE_DRUM; pageVue = -1; }
-      else if (page == PAGE_DRUM) { page = drumAvant; pageVue = -1; }
+      if (drumMode) drumPrepare();                 // (sa page : plus bas, avec les autres modes de SEQ)
     }
     // GLO vers DRUM KEYBOARD : ses sons
     {
@@ -3102,22 +3161,19 @@ int main(void) {
       }
       if (batteries) dkPrepare();
     }
-    // SEQ vers LOOPER : sa page
+    // SEQ : chaque mode a sa page, et y va en meme temps que lui. DRUM MACHINE : la sienne ; LOOPER : la sienne ;
+    // TRACKER : la page du tracker ou l'on etait avant (SONG, CHAIN, PHRASE, INSTR ou TABLE), d'ou que l'on parte.
+    // Tout l'ecran est renvoye : rien de la page quittee ne reste affiche.
     {
-      static bool looperMode = false;
-      if (fm1_looper() != looperMode) {
-        looperMode = fm1_looper();
-        if (looperMode) { page = PAGE_LOOPER; pageVue = -1; }
-      }
-    }
-    // SEQ vers TRACKER, depuis une page qui n'est pas le tracker (FX, DRUM, HELP, PRESET, PROJECT) : on revient
-    // sur SONG (sur SONG, CHAIN, PHRASE, INSTR, TABLE, on reste ou l'on edite). GLO (KEYBOARD / D-PAD) : on reste.
-    {
-      static int modeAvant = -1;
+      static int modeAvant = -1, pageTracker = PAGE_SONG;
+      if (page == PAGE_SONG || page == PAGE_CHAIN || page == PAGE_PHRASE || page == PAGE_INSTR || page == PAGE_TABLE)
+        pageTracker = page;
       const int mode = fm1_drum() ? 1 : fm1_looper() ? 2 : 0;
-      if (modeAvant >= 0 && mode != modeAvant && mode == 0 && page != PAGE_SONG && page != PAGE_CHAIN &&
-          page != PAGE_PHRASE && page != PAGE_INSTR && page != PAGE_TABLE && !navigateur && !dialogueNom) {
-        page = PAGE_SONG; pageVue = -1;
+      if (modeAvant >= 0 && mode != modeAvant && !navigateur && !dialogueNom) {
+        if (mode == 1) drumAvant = page == PAGE_DRUM ? PAGE_SONG : page;   // (D-PAD : SELECT + haut y ramene)
+        page = mode == 1 ? PAGE_DRUM : mode == 2 ? PAGE_LOOPER : pageTracker;
+        pageVue = -1;
+        fm1_ecran_tout();
       }
       modeAvant = mode;
     }
@@ -5706,10 +5762,14 @@ int main(void) {
               pageVue = -1;
             } else if (menuProjet == 2) {
               navSuppr = false;
+#ifdef FM1_HOST
+              fm1_host_mac_demande();              // (le plugin : les fichiers du Mac, pas la liste)
+#else
               if (carteOK) { creeSiAbsent(dossierSongs);
                              strcpy(dossier, dossierSongs);
                              navGenre = 0; scanne(); navigateur = true;
                              pageRetour = PAGE_PROJECT; pageVue = -1; }
+#endif
             } else if (menuProjet == 3) {
               demandeNouveau = true; pageVue = -1;
             } else if (menuProjet == 5) {
@@ -6293,6 +6353,9 @@ int main(void) {
           enLecture = true;
           suiviLecture = true;                    // (FM-1 : la vue suit la lecture)
         }
+#ifdef FM1_HOST
+        fm1_host_start(enLecture);                // (le plugin : avec Link, l'hote part ou s'arrete aussi)
+#endif
       }
     }
     // La vue suit le curseur sans jamais le coller au bord.

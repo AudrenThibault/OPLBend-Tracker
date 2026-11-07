@@ -11,7 +11,12 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#ifdef FM1_HOST
+static uint8_t _heap_start[1u << 20];             // (le plugin : un tas a lui, tracker/plugin/native)
+#define _heap_end (_heap_start + sizeof _heap_start)
+#else
 extern uint8_t _heap_start[], _heap_end[];
+#endif
 
 typedef struct bloc { size_t taille; struct bloc *suivant; } bloc_t;   // taille : en-tete compris
 #define ALIGNE(n) (((n) + 7u) & ~(size_t)7u)

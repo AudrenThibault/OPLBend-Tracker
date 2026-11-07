@@ -596,6 +596,7 @@ static void agr_init(void)
 // de l'afficheur.
 static uint32_t s_empreinte[240];
 static uint8_t s_ecran_neuf = 1;                  /* tout renvoyer (demarrage, retour d'UBOOT...) */
+void fm1_ecran_tout(void) { s_ecran_neuf = 1; }   /* (une autre page : tout l'ecran renvoye, rien de l'ancienne ne reste) */
 #define BANDE 4u
 static uint16_t s_bande[2][240u * BANDE];
 static uint8_t s_bande_k;
@@ -1572,6 +1573,16 @@ void scanKeys(void)
         if (FM1_TOUCHES[i].fm1 != FM1_AUCUNE && !(s_clavier && !s_clavier_suspendu && FM1_TOUCHES[i].fm1 >= FM1_TOUCHE(0)) &&
             controle_tenu(FM1_TOUCHES[i].fm1, boutons, notes))
             s_tenues |= FM1_TOUCHES[i].ds;
+#ifdef FM1_HOST
+    /* le plugin : le clavier du Mac fait la croix, A, B, SELECT, START du mode D-PAD, dans tous les modes de GLO
+       (tracker/plugin/native) ; un premier appui ferme l'ecran D-PAD, sans agir, comme une touche du FM-1 */
+    if (s_dpad_ecran && (fm1_host_dpad & ~s_avant)) {
+        s_dpad_ecran = 0;
+        s_ecran_neuf = 1;
+        s_masque |= fm1_host_dpad;
+    }
+    s_tenues |= fm1_host_dpad;
+#endif
     if (dpad_part)
         s_masque |= s_tenues;                     /* (ce qui a ferme l'ecran D-PAD n'agit pas) */
     // Les molettes : chaque cran devient UNE repetition de sa touche DS (ce que
@@ -1745,6 +1756,70 @@ void fm1_rappel_audio(void (*f)(void)) { s_rappel_audio = f; }
 
 uint32_t fm1_vitesse(void);                      /* (src/opl3.c : CLOCK PITCH, la vitesse de l'horloge, Q16) */
 static uint32_t s_echantillons_reste;
+
+#ifdef FM1_HOST
+/* Le plugin : le morceau cale sur la lecture de l'hote (fm1_host_tempo, fm1_host.c). Sa position suit celle
+   de l'hote, au tempo de l'hote (suit 1) ou au sien (suit 2 : l'hote le suit par Link) ; un ecart se
+   rattrape en quelques lignes, un saut de l'hote relance le morceau a sa place. Juste avant que l'hote
+   parte (joue 2), le morceau lance attend, sans un tick. Rend 1 s'il a pris les ticks de ce bloc. */
+int md_replayer_host_lignes_par_temps(void);
+bool md_replayer_host_joue_song(void);
+int md_replayer_host_vitesse(void);
+double md_replayer_host_prochain(void);
+double md_replayer_host_cherche(double lignes);
+static uint8_t s_cale;
+static double s_ecart_ms, s_reste;               /* l'ecart a l'hote (ms, + : en retard) ; ce qui en reste en moyenne */
+static int fm1_suit_hote(uint32_t n)
+{
+    double lpb, v, cible, p, pos, ecart, corr;
+    uint32_t pq, cumul;
+    if (!fm1_host_tempo.suit || !fm1_host_tempo.joue || !md_replayer_host_joue_song()) {
+        s_cale = 0;
+        return 0;
+    }
+    if (fm1_host_tempo.joue == 2) {
+        s_cale = 0;
+        return 1;
+    }
+    lpb = (double)md_replayer_host_lignes_par_temps();
+    v = (double)md_replayer_host_vitesse();
+    /* ou en est l'hote, en lignes, au milieu de ce bloc (ses ticks partent a son debut : en moyenne a l'heure) */
+    cible = (fm1_host_tempo.temps + (fm1_host_tempo.depuis + n / 2u) * fm1_host_tempo.bpm / (60.0 * FS)) * lpb;
+    fm1_host_tempo.depuis += n;
+    p = fm1_host_tempo.suit == 1 && fm1_host_tempo.bpm > 1.0
+        ? 60.0 * FS * 65536.0 / (fm1_host_tempo.bpm * lpb * v)   /* un tick, en echantillons Q16 */
+        : (double)(s_periode_q16 ? s_periode_q16 : periode_timer0_q16());
+    if (p < 65536.0)
+        p = 65536.0;
+    pos = md_replayer_host_prochain() - (p - (double)s_cumul_q16) / p / v;
+    ecart = cible - pos;
+    if (!s_cale || ecart > lpb || ecart < -lpb) {            /* au depart, ou l'hote a saute : on y va */
+        /* (une ligne passee depuis moins d'un bloc joue tout de suite : la premiere, au depart) */
+        const double bloc = (double)n * 65536.0 / p / v;
+        const double attente = (md_replayer_host_cherche(cible - bloc) - cible) * md_replayer_host_vitesse() * p;
+        s_cumul_q16 = attente <= 0.0 ? (uint32_t)p : attente >= p ? 0u : (uint32_t)(p - attente);
+        s_cale = 1;
+        s_reste = 0.0;
+        ecart = 0.0;
+    }
+    s_ecart_ms = ecart * (p / 65536.0) * v * 1000.0 / FS;
+    s_reste += ecart / 64.0;                                 /* (un ecart qui dure : lentement) */
+    s_reste = s_reste > 0.01 ? 0.01 : s_reste < -0.01 ? -0.01 : s_reste;
+    corr = ecart / 2.0 + s_reste;                            /* (en deux lignes, a 3 % pres au plus) */
+    corr = corr > 0.03 ? 0.03 : corr < -0.03 ? -0.03 : corr;
+    pq = (uint32_t)(p / (1.0 + corr));
+    cumul = s_cumul_q16 + n * 65536u;
+    while (cumul >= pq) {
+        cumul -= pq;
+        s_dans_tick = 1;
+        s_rappel();
+        s_dans_tick = 0;
+        s_ticks++;
+    }
+    s_cumul_q16 = cumul;
+    return 1;
+}
+#endif
 static void fm1_sequenceur(uint32_t n)
 {
     uint32_t p;
@@ -1758,6 +1833,10 @@ static void fm1_sequenceur(uint32_t n)
     s_echantillons_reste &= 0xFFFFu;
     if (!s_lance || !s_rappel)
         return;
+#ifdef FM1_HOST
+    if (fm1_suit_hote(n))
+        return;
+#endif
     p = s_periode_q16 ? s_periode_q16 : periode_timer0_q16();
     if (!p)
         return;

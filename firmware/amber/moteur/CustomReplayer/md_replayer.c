@@ -1703,6 +1703,9 @@ static int replay_speed = 6;
 static int replay_tempo = 50;
 static int samples_per_tick = 0;
 static int samples_until_next_tick = 0;
+#ifdef FM1_HOST
+static long md_host_ticks;    // le plugin : les ticks joues depuis le depart (md_replayer_host_*)
+#endif
 
 // ── Timing AT2 : fréquence de base de l'IRQ + finetune ──────────────────────
 // AT2 ne joue pas à `tempo` Hz : il choisit une fréquence d'IRQ de base (à
@@ -3332,6 +3335,9 @@ static void md_table_tick(int c) {
 }
 
 static void md_process_tick() {
+#ifdef FM1_HOST
+  md_host_ticks++;
+#endif
   if (replay_ticks_left == 0) {
     md_process_row();
     replay_ticks_left = replay_speed;
@@ -3774,6 +3780,9 @@ bool md_replayer_play() {
     fflush(stdout);
   }
   md_current_row = 0;
+#ifdef FM1_HOST
+  md_host_ticks = 0;
+#endif
 
   replay_speed = current_module->initial_speed;
   replay_tempo = current_module->initial_tempo;
@@ -4018,6 +4027,58 @@ void md_replayer_ds_demarre(void) {
   irqEnable(IRQ_TIMER0);
   md_ds_horloge_repart();
 }
+
+#ifdef FM1_HOST
+// ── Le plugin (tracker/plugin) : la position du morceau, calee sur l'hote ──
+// En lignes « de tempo » depuis le depart : des ticks, comptes a la vitesse de
+// depart du morceau (celle de son BPM). Une commande de vitesse change la duree
+// de ses lignes, pas le tempo : le groove du morceau reste le sien.
+bool md_replayer_host_joue_song(void) {
+  return current_module && play_status == MD_PLAYING && play_scope == MD_SCOPE_SONG;
+}
+
+int md_replayer_host_vitesse(void) {
+  return current_module && current_module->initial_speed > 0 ? current_module->initial_speed : 6;
+}
+
+// Les lignes par temps pour l'hote : celles du morceau, doublees tant que le tempo qu'elles donnent passe 200 BPM.
+// Un morceau ecrit a 8 lignes par temps (tempo 102, vitesse 6 : 255 BPM a 4 lignes) bat a 127,5 pour Live.
+// (de la vitesse et du tempo de depart, pas du finetune : le tempo de l'hote le change)
+int md_replayer_host_lignes_par_temps(void) {
+  int rpb = md_replayer_get_rows_per_beat();
+  if (!current_module || current_module->initial_tempo <= 0)
+    return rpb;
+  const double lignes_par_minute = current_module->initial_tempo * 60.0 / md_replayer_host_vitesse();
+  while (lignes_par_minute / rpb > 200.0 && rpb < 64)
+    rpb *= 2;
+  return rpb;
+}
+
+// La position du prochain tick.
+double md_replayer_host_prochain(void) {
+  return (double)md_host_ticks / md_replayer_host_vitesse();
+}
+
+// Le morceau depuis sa premiere ligne de SONG qui a quelque chose, lu sans le
+// son jusqu'a `lignes` (les boucles des colonnes comprises, comme a l'ecoute) :
+// rend la position du prochain tick, a moins d'un tick apres `lignes`.
+double md_replayer_host_cherche(double lignes) {
+  if (!current_module) return 0.0;
+  int depart = 0;
+  for (int r = 0; r < MD_SONG_ROWS && !depart; r++)
+    for (int c = 0; c < current_module->num_channels; c++)
+      if (current_module->song[c][r] != MD_EMPTY) { depart = r + 1; break; }
+  md_replayer_set_play_scope(MD_SCOPE_SONG, 0, 0);
+  md_replayer_play_from(depart ? depart - 1 : 0);
+  md_replayer_play();
+  ds_voix_retard_actif(false);
+  for (long n = 0; n < 4000000L && md_replayer_host_prochain() < lignes - 1e-9; n++)
+    md_process_tick();
+  ds_voix_purge();
+  md_ds_silence();
+  return md_replayer_host_prochain();
+}
+#endif
 
     const char *md_replayer_get_instr_name(int index) {
       if (!current_module || index < 1 || index > MD_MAX_INSTRUMENTS)

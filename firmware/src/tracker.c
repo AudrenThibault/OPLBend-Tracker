@@ -6,6 +6,10 @@
  * Each file uses what the files above it define, so the order matters. */
 
 /* ---------------------------------------------------- build options --- */
+#ifdef FM1_HOST                  /* the VST plugin (tracker/plugin/native): no USB, no update; its own HAL */
+#define FELUCCA_OTA 0
+#define FELUCCA_UAC 0
+#endif
 #define FELUCCA_FLASH 1
 #ifndef FELUCCA_OTA
 #define FELUCCA_OTA 1            /* M-UPGRADE update entry over USB-MIDI (ota.c): keep it, it is how a new
@@ -13,7 +17,9 @@
 #endif
 #define FELUCCA_OTA_DRYRUN 0
 #define FELUCCA_CDC 0
+#ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1            /* USB audio input (usb.c): the output, 16-bit stereo, recordable from a computer */
+#endif
 #define FELUCCA_UART 0
 #ifndef FELUCCA_ID
 #define FELUCCA_ID "FM-1_800"    /* package identity (build.py) */
@@ -64,7 +70,22 @@ void *realloc(void *p, size_t n);
 
 /* ------------------------------------------------------------ sound --- */
 #include "core.h"
+#ifdef FM1_HOST                  /* the plugin has two OPL3s: this one and Nuked OPL3 (opl3_nuked.c takes the names) */
+#define opl3_reset opl3_reset_fm1
+#define opl3_ecrit opl3_ecrit_fm1
+#define opl3_rend opl3_rend_fm1
+#define fm1_bend fm1_bend_fm1
+#define fm1_bend_pistes fm1_bend_pistes_fm1
+#endif
 #include "opl3.c"
+#ifdef FM1_HOST
+#undef opl3_reset
+#undef opl3_ecrit
+#undef opl3_rend
+#undef fm1_bend
+#undef fm1_bend_pistes
+#include "opl3_nuked.c"
+#endif
 #include "audio.c"
 
 /* ---------------------------------------------- flash, C library, DS --- */
@@ -78,6 +99,9 @@ void *realloc(void *p, size_t n);
 #include "fm1_a2m_export.c"           /* EXPORT A2M (PROJECT), streamed too */
 #include "fm1_obt.c"                  /* the .OBT projects: the engine file, compressed whole (LZH) */
 
+#ifdef FM1_HOST
+#include "fm1_host.c"            /* the plugin's side: boot, time, keys, screen, its API (tracker/plugin/native) */
+#else
 /* ------------------------------------------------------ USB, update --- */
 #include "usb.c"
 #if FELUCCA_OTA
@@ -87,3 +111,4 @@ void *realloc(void *p, size_t n);
 #endif
 
 #include "main.c"
+#endif
