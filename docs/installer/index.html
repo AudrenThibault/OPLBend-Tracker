@@ -626,7 +626,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (s) => { $("log").textContent += s + "\n"; };
 let image = null;
-const meta = {"version": "0.2", "product": "FM-1_800", "pkg": "../firmware/oplbend-tracker-0.2.fwsc"};
+const meta = {"version": "0.3", "product": "FM-1_803", "pkg": "../firmware/oplbend-tracker-0.3.fwsc"};
 
 let writing = false, stock = null, stockFileEpoch = 0;
 const lockInstaller = (on) => { writing = on; $("go").disabled = on || !image; $("stock-go").disabled = on || !stock; $("stock-file").disabled = on; };
