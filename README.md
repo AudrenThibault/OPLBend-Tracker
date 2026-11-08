@@ -53,7 +53,7 @@ OPLBend Tracker also runs as a VST3 instrument (`plugin/`). It runs the tracker'
 - The song follows your DAW (tempo, automation, Play and Stop), or leads it through Ableton Link
 - PROJECT > LOAD opens songs from your Mac (.OBT, .XT, .A2M); PROJECT > SAVE saves them there too
 
-**[Download it from the latest release →](https://github.com/AudrenThibault/OPLBend-Tracker/releases/latest)** Apple silicon Macs (M1 and later): unzip it and move `OPLBend.vst3` to `~/Library/Audio/Plug-Ins/VST3`. If macOS blocks it, run `xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/OPLBend.vst3` in Terminal. More in [plugin/README.md](plugin/README.md).
+**[Download it from the latest release →](https://github.com/AudrenThibault/OPLBend-Tracker/releases/latest)** Apple silicon Macs (M1 and later): unzip it and move `OPLBend.vst3` to `~/Library/Audio/Plug-Ins/VST3`. If macOS blocks it, open System Settings > Privacy & Security and click **Open Anyway** next to OPLBend, then restart your DAW. More in [plugin/README.md](plugin/README.md).
 
 ## Build
 
