@@ -1,0 +1,8 @@
+{
+  "what": "An LSDJ-style tracker on an OPL3-style FM engine, with 2,103 presets. The keyboard doubles as a gamepad to write songs fast, with FX inspired by circuit bending, a drum machine and a looper. Songs open and export as AdLib Tracker II .A2M files.",
+  "author": "Audren",
+  "kinds": ["tracker"],
+  "image": "docs/media/splash.png",
+  "color": "#FF5FA2",
+  "sounds": "licensed: instrument presets from AdLib Tracker II, LGPL-2.1+"
+}
