@@ -139,7 +139,8 @@ static void master_poll(void)
 static void flash_boot(void)
 {
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;   /* the expected 1 MiB part, else RAM only */
+    const uint32_t id = FL_FAR(fl_jedec_ram)();
+    flash_ok = id == 0x856014u || id == 0xB36014u;   /* the 1 MiB parts (Puya P25Q80H, newer units: UCUN UC25HQ80), else RAM only */
     irq_restore(f);
 }
 
