@@ -4,5 +4,5 @@
   "kinds": ["tracker"],
   "image": "docs/media/splash.png",
   "color": "#FF5FA2",
-  "sounds": "licensed: instrument presets from AdLib Tracker II, LGPL-2.1+"
+  "sounds": "licensed: instrument presets shipped in the AdLib Tracker II source by subz3ro, GPL-3.0-or-later"
 }
