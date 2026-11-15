@@ -14,7 +14,8 @@
 #include <fat.h>
 #include <dirent.h>
 #include <stdlib.h>
-#include <strings.h>
+extern "C" int strcasecmp(const char *a, const char *b);      // (fm1_libc.c)
+extern "C" int strncasecmp(const char *a, const char *b, size_t n);
 #include <sys/stat.h>
 #include <sys/types.h>
 

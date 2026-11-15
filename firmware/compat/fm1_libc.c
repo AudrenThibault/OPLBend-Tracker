@@ -18,6 +18,19 @@ static uint8_t _heap_start[1u << 20];             // (le plugin : un tas a lui, 
 extern uint8_t _heap_start[], _heap_end[];
 #endif
 
+// strcasecmp / strncasecmp ici plutot que <strings.h>, absent de certaines libc
+static int fm1_minus(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+int strncasecmp(const char *a, const char *b, size_t n)
+{
+    for (; n; n--, a++, b++) {
+        const int d = fm1_minus((unsigned char)*a) - fm1_minus((unsigned char)*b);
+        if (d || !*a)
+            return d;
+    }
+    return 0;
+}
+int strcasecmp(const char *a, const char *b) { return strncasecmp(a, b, (size_t)-1); }
+
 typedef struct bloc { size_t taille; struct bloc *suivant; } bloc_t;   // taille : en-tete compris
 #define ALIGNE(n) (((n) + 7u) & ~(size_t)7u)
 #define TETE ALIGNE(sizeof(bloc_t))

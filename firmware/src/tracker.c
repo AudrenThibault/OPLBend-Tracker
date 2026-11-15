@@ -36,7 +36,8 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
-#include <strings.h>
+int strcasecmp(const char *a, const char *b);          /* (fm1_libc.c: no <strings.h>, not every libc has it) */
+int strncasecmp(const char *a, const char *b, size_t n);
 void *malloc(size_t n);
 void free(void *p);
 void *calloc(size_t n, size_t t);
